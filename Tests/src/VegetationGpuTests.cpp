@@ -65,8 +65,13 @@ namespace {
         ++set.revision;
     }
 
+    // Espèce d'un arbre semé, et s'il est du sous-bois (espèce + 16).
     std::uint32_t SpeciesOf(const VegetationRenderer::Tree& tree) {
-        return static_cast<std::uint32_t>(tree.speciesAngle / 8.0f);
+        return static_cast<std::uint32_t>(tree.speciesAngle / 8.0f) & 15u;
+    }
+
+    bool IsUnderstory(const VegetationRenderer::Tree& tree) {
+        return static_cast<std::uint32_t>(tree.speciesAngle / 8.0f) >= 16u;
     }
 
     // Sème les plaines `keys` (caméra au centre de la planète) et relit leurs arbres.
@@ -120,7 +125,8 @@ namespace {
                     const auto index = static_cast<std::size_t>(it - sorted.begin());
                     if (!used[index] && Math::Length(Math::Vector3d(it->position) - local) < 0.05) {
                         used[index] = true;
-                        if (SpeciesOf(*it) == tree.species && std::abs(it->scale - tree.scale) <= 1.0e-3f) {
+                        if (SpeciesOf(*it) == tree.species && IsUnderstory(*it) == tree.understory
+                            && std::abs(it->scale - tree.scale) <= 1.0e-3f) {
                             ++matched;
                         } else {
                             std::printf("  %s : arbre d'espèce %u, taille %.4f sur le GPU ; %u, %.4f sur le CPU\n", name,
@@ -170,6 +176,35 @@ bool RunVegetationGpuTests() {
     std::vector<std::vector<VegetationRenderer::Tree>> first;
     CHECK(Sow(**device, terrain, planet, everywhere, keys, first));
     CHECK(SameAsCpu(terrain, planet, everywhere, keys, first, "partout"));
+
+    // Sous-bois : un second étage d'une autre espèce, plus petit, marqué ; le CPU le retrouve aussi (collision des jeunes
+    // arbres). Les arbres, eux, ne changent pas.
+    {
+        VegetationSet underwood;
+        underwood.species = {Species(0.7f, 1.3f, 90.0f, 12.0f), Species(1.0f, 1.0f, 90.0f)};
+        AddBiome(underwood, {1.0f, 1.0f, 1.0f}, 1.0f, 1.0f, {{0, 1.0f}});
+        underwood.biomes[0].soil[2] = 0.4f;
+        underwood.biomes[0].soil[3] = 0.25f;
+        underwood.understorySpecies = {{1u | (1u << 8), 1u | (1u << 8), 1u | (1u << 8), 1u | (1u << 8)}};
+        underwood.understoryShares = {{1.0f, 1.0f, 1.0f, 1.0f}};
+        std::vector<std::vector<VegetationRenderer::Tree>> sown;
+        CHECK(Sow(**device, terrain, planet, underwood, keys, sown));
+        std::size_t young = 0;
+        std::size_t grown = 0;
+        for (const std::vector<VegetationRenderer::Tree>& plain : sown) {
+            for (const VegetationRenderer::Tree& tree : plain) {
+                if (IsUnderstory(tree)) {
+                    CHECK(SpeciesOf(tree) == 1 && tree.scale == 0.25f);
+                    ++young;
+                } else {
+                    CHECK(SpeciesOf(tree) == 0);
+                    ++grown;
+                }
+            }
+        }
+        CHECK(young > 200 && grown > 200);
+        CHECK(SameAsCpu(terrain, planet, underwood, keys, sown, "sous-bois"));
+    }
 
     // Listes de dessin : au loin, l'imposteur d'une espèce (une commande, un carré par arbre) à la place des primitives
     // de son modèle lointain ; une espèce sans imposteur garde son modèle lointain.

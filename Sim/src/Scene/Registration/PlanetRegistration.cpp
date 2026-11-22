@@ -214,6 +214,8 @@ namespace Flux {
                    {.speed = 1.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
             .Field("range", "Visibles jusqu'à (m)", &VegetationComponent::range,
                    {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
+            .Field("understoryRange", "Sous-bois visible jusqu'à (m)", &VegetationComponent::understoryRange,
+                   {.speed = 10.0, .min = 0.0, .max = 1.0e5, .decimals = 0})
             .Field("leafWrap", "Lumière enveloppante", &VegetationComponent::leafWrap,
                    {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("leafTransmission", "Lumière traversante", &VegetationComponent::leafTransmission,

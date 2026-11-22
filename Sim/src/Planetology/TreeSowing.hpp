@@ -28,12 +28,22 @@ namespace Flux::Planetology {
     FLUX_SIM_API SowSettings GetSowSettings(const Terrain& terrain, const PlanetComponent& planet);
 
     // Espacement des arbres : côté (en places de la grille, 1 à MaxTreeBlock) des blocs dont une seule place garde un
-    // arbre, pour chaque espèce (4 bits chacune, dans l'ordre de VegetationSet::species) de chaque biome ; et les côtés
+    // arbre, pour chaque espèce (4 bits chacune, dans l'ordre de VegetationSet::biomeSpecies) de chaque biome ; et les côtés
     // employés (bit k), qui écartent les autres places avant le relief. Calculé une fois par le CPU, pour le GPU
     // (SowVegetation) et SowPlain : le même arrondi des deux côtés.
     constexpr std::uint32_t MaxTreeBlock = 8;
     // Bosquets (GroveValue dans shaders/PlanetTile.slang) : ce qui sépare le tirage des espèces de celui des biomes.
     constexpr std::int32_t SpeciesSalt = 7919;
+    // Sous-bois (SowPlain, SowUnderstory dans shaders/PlanetTile.slang) : une place par case, tirée d'un autre hasard
+    // (UnderstorySeed) et décalée d'au plus 40 % de la case ; hors des forêts, UnderstoryOpen de la densité ; écartée à
+    // moins de UnderstoryClearance case (2 à 2,5 m) du pied d'un arbre ; espèces par bosquets de UnderstoryGrove fois
+    // ceux des arbres (UnderstorySalt sépare leur tirage).
+    constexpr std::uint32_t UnderstorySeed = 0x2c1b3c6du;
+    constexpr double UnderstoryJitter = 0.8;
+    constexpr double UnderstoryOpen = 0.3;
+    constexpr double UnderstoryClearance = 0.4;
+    constexpr double UnderstoryGrove = 0.25;
+    constexpr std::int32_t UnderstorySalt = 104729;
     struct TreeBlocks
     {
         std::array<std::uint32_t, VegetationSet::MaxBiomes> sides{};
@@ -50,6 +60,7 @@ namespace Flux::Planetology {
         Math::Vector3d position;   // pied, repère de la planète (centre à l'origine) ; il pousse vers le haut (radial)
         float scale = 1.0f;        // x le modèle
         std::uint32_t species = 0; // dans VegetationSet::species
+        bool understory = false;   // du sous-bois (VegetationBiome::understory)
     };
 
     // Semis d'une plaine (tuile de niveau VegetationRenderer::GetPlainLevel) refait par le CPU, en double, pour la

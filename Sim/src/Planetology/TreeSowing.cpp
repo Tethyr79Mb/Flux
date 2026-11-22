@@ -191,7 +191,33 @@ namespace Flux::Planetology {
             const std::uint32_t entry = set.biomeSpecies[biome][choice];
             first = entry & 255u;
             variants = std::max(entry >> 8, 1u);
-            return blocks.sides[biome] >> (4 * std::min(first, VegetationSet::MaxSpecies - 1)) & 15u;
+            return blocks.sides[biome] >> (4 * choice) & 15u;
+        }
+
+        // Place de l'arbre du bloc de côté side qui contient (x, y), dans la grille de la plaine (u, v de 0 à TileQuads) ;
+        // state : le hasard du bloc (TreeBlockKeeps), tiré ici de la place pour side 1. Comme TreeInBlock.
+        void TreeInBlock(std::uint32_t seed, TileKey plain, std::uint32_t x, std::uint32_t y, std::uint32_t side,
+                         std::uint32_t& state, double& u, double& v) {
+            constexpr double step = static_cast<double>(TileQuads) / static_cast<double>(TreeGrid);
+            if (side == 1) {
+                state = TreeHash(seed ^ TreeHash(plain.face * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
+                // Décalage d'au plus 30 % de la case : deux voisins restent à 40 % de l'espacement au moins.
+                u = (x - plain.x * TreeGrid + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+                v = (y - plain.y * TreeGrid + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+                return;
+            }
+            const double i = static_cast<double>(static_cast<std::int32_t>(x / side * side - plain.x * TreeGrid));
+            const double j = static_cast<double>(static_cast<std::int32_t>(y / side * side - plain.y * TreeGrid));
+            // Dans la plaine de la place : un bloc à cheval sur deux plaines n'en sort pas son arbre.
+            u = std::clamp((i + side * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
+            v = std::clamp((j + side * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
+        }
+
+        // Espèce (0 à 3) du sous-bois du biome, par bosquets plus petits que ceux des arbres. Comme UnderstoryChoice.
+        std::uint32_t UnderstoryChoice(const VegetationSet& set, const Math::Vector3d& flatPoint, std::uint32_t biome) {
+            const double pick = GroveValue(flatPoint, set.biomes[biome].color[3] * UnderstoryGrove, UnderstorySalt);
+            const std::array<float, 4> shares = biome < set.understoryShares.size() ? set.understoryShares[biome] : std::array{1.0f, 1.0f, 1.0f, 1.0f};
+            return pick < shares[0] ? 0 : pick < shares[1] ? 1 : pick < shares[2] ? 2 : 3;
         }
     }
 
@@ -227,16 +253,14 @@ namespace Flux::Planetology {
                 ++wooded;
             }
             const double factor = b < set.biomeSpacing.size() ? set.biomeSpacing[b] : 1.0;
-            for (std::size_t s = 0; s < VegetationSet::MaxSpecies; ++s) {
-                const double spacing = s < set.species.size() ? set.species[s].spacing * factor : 0.0;
+            for (std::uint32_t choice = 0; choice < VegetationSet::MaxSharesPerBiome; ++choice) {
+                const std::uint32_t first = set.biomeSpecies[b][choice] & 255u;
+                const double spacing = first < set.species.size() ? set.species[first].spacing * factor : 0.0;
                 const auto side = static_cast<std::uint32_t>(std::clamp(std::round(spacing / cell), 1.0, static_cast<double>(MaxTreeBlock)));
-                blocks.sides[b] |= side << (4 * s);
-                // Seules les espèces que le biome peut tirer comptent pour écarter des places.
-                for (std::uint32_t e : set.biomeSpecies[b]) {
-                    if (s >= (e & 255u) && s < (e & 255u) + std::max(e >> 8, 1u)) {
-                        blocks.used |= 1u << side;
-                        break;
-                    }
+                blocks.sides[b] |= side << (4 * choice);
+                // Seuls les biomes qui ont des arbres écartent des places.
+                if (set.biomes[b].humidity[2] > 0.0f) {
+                    blocks.used |= 1u << side;
                 }
             }
         }
@@ -266,6 +290,73 @@ namespace Flux::Planetology {
             const Math::Vector3d direction = DirectionInTile(plain, u, v);
             return direction * (planetRadius + terrain.GetHeight(direction, octaves));
         };
+        // Une place : sa forêt d'abord (avant le relief, cher), puis le sol et le biome qui y pousse (comme SowSite et
+        // SiteBiome, shaders/PlanetTile.slang).
+        struct Site
+        {
+            double u = 0.0, v = 0.0;
+            Math::Vector3d direction, flat, local;
+            double noise = 0.0, wet = 0.0, moreForest = 0.0;
+            std::array<double, VegetationSet::MaxBiomes> weights{};
+        };
+        const auto prepare = [&](double u, double v) {
+            Site site;
+            site.u = u;
+            site.v = v;
+            site.direction = DirectionInTile(plain, u, v);
+            site.flat = site.direction * radius;
+            site.noise = ForestNoise(site.flat);
+            // Humidité du relief : plus de forêts au fond des vallons, moins sur les crêtes.
+            site.wet = SampleWetness(wetness, u, v);
+            site.moreForest = ReliefForest * site.wet;
+            return site;
+        };
+        // Biome qui pousse sur la place (MaxBiomes : aucun, ou plage, neige).
+        const auto grow = [&](Site& site) {
+            Terrain::Zones zones;
+            const double height = terrain.GetHeight(site.direction, octaves, &zones);
+            if (height < settings.shape[3] + 2.0 || height > settings.shape[2] - 0.1 * relief) {
+                return VegetationSet::MaxBiomes;
+            }
+            site.local = site.direction * (planetRadius + height);
+            const double altitude = height / relief;
+            const double wet = site.wet;
+            Climate climate = ClimateAt(radius, relief, settings.climate, site.local);
+            climate.humidity += ReliefHumidity * wet;
+            const Math::Vector3d zoneShares{(1.0 - zones.hills) * (1.0 - zones.mountains), zones.hills * (1.0 - zones.mountains),
+                                            zones.mountains};
+            const Math::Vector3d lithology = Lithology(site.flat, zones.mountains);
+            const Geology geology{lithology.x, lithology.y, lithology.z, SoilDepth(wet, lithology)};
+            double remaining = 1.0;
+            for (std::uint32_t b = 0; b < biomeCount; ++b) {
+                site.weights[b] = BiomeFit(set.biomes[b], zoneShares, altitude, climate, geology) * remaining;
+                remaining -= site.weights[b];
+            }
+            return GroveBiome(site.flat, blocks.biomeGrove, site.weights, biomeCount);
+        };
+        // Variante tirée parmi celles de l'espèce, pente, taille : l'arbre s'il pousse. Faux si la pente le refuse (un
+        // autre côté de bloc peut encore poser le sien).
+        const auto plant = [&](const Site& site, std::uint32_t firstVariant, std::uint32_t variants, double scaleFactor,
+                               std::uint32_t& state, bool understory) {
+            const auto variant = std::min(static_cast<std::uint32_t>(TreeRandom(state) * variants), variants - 1);
+            const std::uint32_t species = std::min(firstVariant + variant, VegetationSet::MaxSpecies - 1);
+            if (species >= set.species.size()) {
+                return true; // le GPU lui donne une taille nulle
+            }
+            const VegetationSet::Species& traits = set.species[species];
+            // Comme VegetationRenderer::SetPlanet : le cosinus en float.
+            const double maxSlope = std::cos(traits.maxSlope * (std::numbers::pi_v<float> / 180.0f));
+            constexpr double e = 0.25;
+            const Math::Vector3d du = ground(site.u + e, site.v) - site.local;
+            const Math::Vector3d dv = ground(site.u, site.v + e) - site.local;
+            // Comme SowPlace : <= et borné à 1 (une pente maximale nulle n'en laisse aucun).
+            if (std::min(std::abs(Math::Dot(Math::Normalize(Math::Cross(du, dv)), site.direction)), 1.0) <= maxSlope) {
+                return false;
+            }
+            const double scale = Lerp(traits.minScale, traits.maxScale, TreeRandom(state)) * scaleFactor;
+            trees.push_back({site.local, static_cast<float>(scale), species, understory});
+            return true;
+        };
         for (std::uint32_t c = 0; c < TreeGrid * TreeGrid; ++c) {
             const std::uint32_t gi = c % TreeGrid;
             const std::uint32_t gj = c / TreeGrid;
@@ -276,60 +367,27 @@ namespace Flux::Planetology {
                     continue;
                 }
                 std::uint32_t state;
-                double u, v;
-                if (side == 1) {
-                    state = TreeHash(settings.seed ^ TreeHash(plain.face * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
-                    u = (gi + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
-                    v = (gj + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
-                } else {
-                    if (!TreeBlockKeeps(settings.seed, plain.face, x, y, side, state)) {
-                        continue;
-                    }
-                    const double i = static_cast<double>(static_cast<std::int32_t>(x / side * side - plain.x * TreeGrid));
-                    const double j = static_cast<double>(static_cast<std::int32_t>(y / side * side - plain.y * TreeGrid));
-                    u = std::clamp((i + side * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
-                    v = std::clamp((j + side * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, static_cast<double>(TileQuads));
+                if (side != 1 && !TreeBlockKeeps(settings.seed, plain.face, x, y, side, state)) {
+                    continue;
                 }
+                double u, v;
+                TreeInBlock(settings.seed, plain, x, y, side, state, u, v);
                 const double keep = TreeRandom(state);
-                const Math::Vector3d direction = DirectionInTile(plain, u, v);
-                const Math::Vector3d flat = direction * radius;
-                const double noise = ForestNoise(flat);
-                // Humidité du relief : plus de forêts au fond des vallons, moins sur les crêtes.
-                const double wet = SampleWetness(wetness, u, v);
-                const double moreForest = ReliefForest * wet;
+                Site site = prepare(u, v);
                 double densest = 0.0;
                 for (std::uint32_t b = 0; b < biomeCount; ++b) {
-                    densest = std::max(densest, set.biomes[b].humidity[2] * std::max(ForestMask(noise, set.biomes[b].zones[3] + moreForest), 0.03));
+                    densest = std::max(densest, set.biomes[b].humidity[2] * std::max(ForestMask(site.noise, set.biomes[b].zones[3] + site.moreForest), 0.03));
                 }
                 if (keep >= densest) {
                     continue;
                 }
-                Terrain::Zones zones;
-                const double height = terrain.GetHeight(direction, octaves, &zones);
-                if (height < settings.shape[3] + 2.0 || height > settings.shape[2] - 0.1 * relief) {
-                    continue;
-                }
-                const Math::Vector3d local = direction * (planetRadius + height);
-                const double altitude = height / relief;
-                Climate climate = ClimateAt(radius, relief, settings.climate, local);
-                climate.humidity += ReliefHumidity * wet;
-                const Math::Vector3d zoneShares{(1.0 - zones.hills) * (1.0 - zones.mountains), zones.hills * (1.0 - zones.mountains),
-                                                zones.mountains};
-                const Math::Vector3d lithology = Lithology(flat, zones.mountains);
-                const Geology geology{lithology.x, lithology.y, lithology.z, SoilDepth(wet, lithology)};
-                std::array<double, VegetationSet::MaxBiomes> weights{};
-                double remaining = 1.0;
-                for (std::uint32_t b = 0; b < biomeCount; ++b) {
-                    weights[b] = BiomeFit(set.biomes[b], zoneShares, altitude, climate, geology) * remaining;
-                    remaining -= weights[b];
-                }
-                const std::uint32_t biome = GroveBiome(flat, blocks.biomeGrove, weights, biomeCount);
+                const std::uint32_t biome = grow(site);
                 if (biome == VegetationSet::MaxBiomes
-                    || keep >= set.biomes[biome].humidity[2] * std::max(ForestMask(noise, set.biomes[biome].zones[3] + moreForest), 0.03)) {
+                    || keep >= set.biomes[biome].humidity[2] * std::max(ForestMask(site.noise, set.biomes[biome].zones[3] + site.moreForest), 0.03)) {
                     continue;
                 }
                 std::uint32_t firstVariant, variants;
-                if (GroveSide(set, blocks, biome, GroveSpecies(set, flat, biome), firstVariant, variants) != side) {
+                if (GroveSide(set, blocks, biome, GroveSpecies(set, site.flat, biome), firstVariant, variants) != side) {
                     continue;
                 }
                 // Bord d'un bosquet d'une autre espèce : écarté à moins d'un demi-espacement.
@@ -339,7 +397,7 @@ namespace Flux::Planetology {
                     const double du = k == 0 ? reach : k == 1 ? -reach : 0.0;
                     const double dv = k == 2 ? reach : k == 3 ? -reach : 0.0;
                     const Math::Vector3d beside = DirectionInTile(plain, u + du, v + dv) * radius;
-                    const std::uint32_t other = GroveBiome(beside, blocks.biomeGrove, weights, biomeCount);
+                    const std::uint32_t other = GroveBiome(beside, blocks.biomeGrove, site.weights, biomeCount);
                     if (other != VegetationSet::MaxBiomes && set.biomes[other].humidity[2] > 0.0f) {
                         std::uint32_t otherFirst, otherVariants;
                         const std::uint32_t otherSide = GroveSide(set, blocks, other, GroveSpecies(set, beside, other), otherFirst, otherVariants);
@@ -349,25 +407,65 @@ namespace Flux::Planetology {
                 if (!alone) {
                     continue;
                 }
-                const auto variant = std::min(static_cast<std::uint32_t>(TreeRandom(state) * variants), variants - 1);
-                const std::uint32_t species = std::min(firstVariant + variant, VegetationSet::MaxSpecies - 1);
-                if (species >= set.species.size()) {
-                    break; // le GPU lui donne une taille nulle
+                if (plant(site, firstVariant, variants, set.biomes[biome].humidity[3], state, false)) {
+                    break;
                 }
-                const VegetationSet::Species& traits = set.species[species];
-                // Comme VegetationRenderer::SetPlanet : le cosinus en float.
-                const double maxSlope = std::cos(traits.maxSlope * (std::numbers::pi_v<float> / 180.0f));
-                constexpr double e = 0.25;
-                const Math::Vector3d du = ground(u + e, v) - local;
-                const Math::Vector3d dv = ground(u, v + e) - local;
-                // Comme SowPlace : <= et borné à 1 (une pente maximale nulle n'en laisse aucun).
-                if (std::min(std::abs(Math::Dot(Math::Normalize(Math::Cross(du, dv)), direction)), 1.0) <= maxSlope) {
+            }
+        }
+        // Sous-bois : une place par case de sa propre grille, sans les blocs d'espacement des arbres ; écartée près du
+        // pied d'un arbre possible.
+        double densestUnderstory = 0.0;
+        for (std::uint32_t b = 0; b < biomeCount; ++b) {
+            densestUnderstory = std::max(densestUnderstory, static_cast<double>(set.biomes[b].soil[2]));
+        }
+        if (densestUnderstory <= 0.0) {
+            return;
+        }
+        for (std::uint32_t c = 0; c < TreeGrid * TreeGrid; ++c) {
+            const std::uint32_t gi = c % TreeGrid;
+            const std::uint32_t gj = c / TreeGrid;
+            const std::uint32_t x = plain.x * TreeGrid + gi;
+            const std::uint32_t y = plain.y * TreeGrid + gj;
+            std::uint32_t state = TreeHash(settings.seed ^ TreeHash(plain.face * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu)
+                                           ^ UnderstorySeed);
+            const double u = (gi + 0.5 + (TreeRandom(state) - 0.5) * UnderstoryJitter) * step;
+            const double v = (gj + 0.5 + (TreeRandom(state) - 0.5) * UnderstoryJitter) * step;
+            const double keep = TreeRandom(state);
+            Site site = prepare(u, v);
+            double densest = 0.0;
+            for (std::uint32_t b = 0; b < biomeCount; ++b) {
+                densest = std::max(densest, set.biomes[b].soil[2] * std::max(ForestMask(site.noise, set.biomes[b].zones[3] + site.moreForest), UnderstoryOpen));
+            }
+            if (keep >= densest) {
+                continue;
+            }
+            // Pied d'un arbre : celui que chaque bloc employé pourrait poser, qu'il ait poussé ou non.
+            bool clear = true;
+            for (std::uint32_t side = 1; side <= MaxTreeBlock && clear; ++side) {
+                if ((blocks.used >> side & 1u) == 0) {
                     continue;
                 }
-                const double scale = Lerp(traits.minScale, traits.maxScale, TreeRandom(state)) * set.biomes[biome].humidity[3];
-                trees.push_back({local, static_cast<float>(scale), species});
-                break;
+                std::uint32_t treeState = 0;
+                if (side != 1) {
+                    TreeBlockKeeps(settings.seed, plain.face, x, y, side, treeState);
+                }
+                double tu, tv;
+                TreeInBlock(settings.seed, plain, x, y, side, treeState, tu, tv);
+                clear = (tu - u) * (tu - u) + (tv - v) * (tv - v) >= UnderstoryClearance * UnderstoryClearance * step * step;
             }
+            if (!clear) {
+                continue;
+            }
+            const std::uint32_t biome = grow(site);
+            if (biome == VegetationSet::MaxBiomes
+                || keep >= set.biomes[biome].soil[2] * std::max(ForestMask(site.noise, set.biomes[biome].zones[3] + site.moreForest), UnderstoryOpen)) {
+                continue;
+            }
+            if (biome >= set.understorySpecies.size()) {
+                continue;
+            }
+            const std::uint32_t entry = set.understorySpecies[biome][UnderstoryChoice(set, site.flat, biome)];
+            plant(site, entry & 255u, std::max(entry >> 8, 1u), set.biomes[biome].soil[3], state, true);
         }
     }
 }

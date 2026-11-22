@@ -851,8 +851,10 @@ namespace FluxEditor {
                 continue;
             }
             bool changed = false;
-            for (Planetology::VegetationBiome::Share& share : biome->species) {
-                changed |= ReplacePath(share.species, oldReference, newReference);
+            for (auto* shares : {&biome->species, &biome->understory}) {
+                for (Planetology::VegetationBiome::Share& share : *shares) {
+                    changed |= ReplacePath(share.species, oldReference, newReference);
+                }
             }
             if (changed && !SceneSerializer::WriteFile(path, Planetology::WriteVegetationBiome(*biome))) {
                 failures.push_back(Platform::ToUtf8(path.filename()));

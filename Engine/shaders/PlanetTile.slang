@@ -936,7 +936,7 @@ struct TreeJob
     float4 climate;  // xyz : températures à l'équateur, aux pôles, humidité ; w : rayon de l'océan (0 : aucun)
 };
 
-static const uint MaxSpecies = 8; // VegetationLibrary::MaxSpecies
+static const uint MaxSpecies = 16; // VegetationLibrary::MaxSpecies
 
 // Doit correspondre à VegetationRenderer::SowVegetation : biomes et espèces de la planète.
 struct SowVegetation
@@ -947,11 +947,14 @@ struct SowVegetation
     float4 species[MaxSpecies];    // x, y : tailles extrêmes (x le modèle) ; z : cosinus de la pente maximale
     uint4 counts;                  // x : biomes ; y : côtés de blocs employés (bit k) ; z : taille des bosquets des biomes (float, m)
     uint4 blocks[MaxBiomes / 4];   // côté des blocs de chaque espèce de chaque biome, 4 bits chacune (TreeBlocks)
+    uint4 understorySpecies[MaxBiomes]; // comme biomeSpecies, pour le sous-bois
+    float4 understoryShares[MaxBiomes];
 };
 
 [[vk::binding(2, 0)]] StructuredBuffer<TreeJob> treeJobs;
 // Deux float4 par arbre : position relative au point de référence de la tuile, taille ; direction du haut (repère de la
-// planète), espèce x 8 + angle autour du haut (radians, moins de 8).
+// planète), (espèce + 16 pour le sous-bois) x 8 + angle autour du haut (radians, moins de 8). Les arbres d'une plaine
+// puis son sous-bois, TreeGrid² places chacun (TreesPerPlain).
 [[vk::binding(3, 0)]] RWStructuredBuffer<float4> trees;
 [[vk::binding(4, 0)]] RWStructuredBuffer<uint> treeCounts; // un par case
 [[vk::binding(5, 0)]] StructuredBuffer<SowVegetation> sowVegetation;
@@ -1053,7 +1056,124 @@ uint GroveSide(uint biome, uint choice, out uint first, out uint variants)
     const uint entry = sowVegetation[0].biomeSpecies[biome][choice];
     first = entry & 255u;
     variants = max(entry >> 8, 1u);
-    return (sowVegetation[0].blocks[biome / 4][biome % 4] >> (4 * min(first, MaxSpecies - 1))) & 15u;
+    return (sowVegetation[0].blocks[biome / 4][biome % 4] >> (4 * choice)) & 15u;
+}
+
+static const uint UnderstorySeed = 0x2c1b3c6du;     // Planetology::UnderstorySeed et suivantes (TreeSowing.hpp)
+static const float UnderstoryJitter = 0.8;
+static const float UnderstoryOpen = 0.3;
+static const float UnderstoryClearance = 0.4;
+static const float UnderstoryGrove = 0.25;
+static const int UnderstorySalt = 104729;
+
+// Espèce (0 à 3) du sous-bois du biome, par bosquets plus petits que ceux des arbres.
+uint UnderstoryChoice(float3 flatPoint, uint biome)
+{
+    const float pick = GroveValue(flatPoint, sowVegetation[0].biomes[biome].color.w * UnderstoryGrove, UnderstorySalt);
+    const float4 shares = sowVegetation[0].understoryShares[biome];
+    return pick < shares.x ? 0 : pick < shares.y ? 1 : pick < shares.z ? 2 : 3;
+}
+
+// Place de l'arbre du bloc de côté side qui contient la place (x, y) de la face, dans la grille de la plaine (u, v de 0
+// à TileQuads). state : le hasard du bloc (TreeBlockKeeps), tiré ici de la place pour side 1.
+void TreeInBlock(TreeJob job, uint x, uint y, uint side, inout uint state, out float u, out float v)
+{
+    const float step = float(TileQuads) / float(TreeGrid);
+    if (side == 1) {
+        // Hasard tiré de la place sur la face et de la graine, pas de la case : mêmes arbres à chaque visite.
+        state = TreeHash(job.options.y ^ TreeHash(job.cell.x * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
+        // Décalage d'au plus 30 % de la case : deux voisins restent à 40 % de l'espacement au moins.
+        u = (float(x - job.cell.z * TreeGrid) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+        v = (float(y - job.cell.w * TreeGrid) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
+        return;
+    }
+    const float i = float(int(x / side * side - job.cell.z * TreeGrid));
+    const float j = float(int(y / side * side - job.cell.w * TreeGrid));
+    // Dans la plaine de la place : un bloc à cheval sur deux plaines n'en sort pas son arbre.
+    u = clamp((i + float(side) * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
+    v = clamp((j + float(side) * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
+}
+
+// Une place : sa forêt d'abord (avant le relief, cher), puis le sol et le biome qui y pousse (SiteBiome). Comme Site
+// dans SowPlain (Planetology/TreeSowing.cpp).
+struct SowSite
+{
+    float u, v;
+    float3 delta, flat;
+    float noise, wet, moreForest;
+    float3 position, local;
+    float weights[MaxBiomes];
+};
+
+SowSite PrepareSite(float u, float v, float radius)
+{
+    SowSite site;
+    site.u = u;
+    site.v = v;
+    site.delta = TreeDelta(u, v);
+    // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas).
+    site.flat = (tile.center.xyz + site.delta) * radius;
+    site.noise = ForestNoise(site.flat);
+    // Humidité du relief : plus de forêts au fond des vallons, moins sur les crêtes.
+    site.wet = SampleWetness(u, v);
+    site.moreForest = ReliefForest * site.wet;
+    site.position = float3(0.0);
+    site.local = float3(0.0);
+    for (uint b = 0; b < MaxBiomes; ++b) {
+        site.weights[b] = 0.0;
+    }
+    return site;
+}
+
+// Biome qui pousse sur la place (MaxBiomes : aucun, ou plage, neige).
+uint SiteBiome(TreeJob job, inout SowSite site)
+{
+    const float radius = job.shape.x;
+    const float relief = max(job.shape.y, 1.0);
+    const uint biomeCount = min(sowVegetation[0].counts.x, MaxBiomes);
+    float2 zones;
+    const float height = Height(site.delta, tile.options.x, zones);
+    // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
+    if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
+        return MaxBiomes;
+    }
+    site.position = Local(site.delta, height);
+    site.local = tile.center.xyz * tile.axisN.w + site.position;
+    const float altitude = height / relief;
+    const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, site.local) + float2(0.0, ReliefHumidity * site.wet);
+    const float3 zoneShares = ZoneShares(zones);
+    const float3 lithology = Lithology(site.flat, zones.y);
+    const float4 geology = float4(lithology, SoilDepth(site.wet, lithology));
+    float remaining = 1.0;
+    for (uint b = 0; b < MaxBiomes; ++b) {
+        site.weights[b] = b < biomeCount ? BiomeFit(sowVegetation[0].biomes[b], zoneShares, altitude, climate, geology) * remaining : 0.0;
+        remaining -= site.weights[b];
+    }
+    return GroveBiome(site.flat, site.weights, biomeCount);
+}
+
+// Variante tirée parmi celles de l'espèce, pente, taille : l'arbre s'il pousse (ses deux float4, voir trees).
+bool Plant(SowSite site, uint firstVariant, uint variants, float scaleFactor, inout uint state, uint layer,
+           out float4 first, out float4 second)
+{
+    first = float4(0.0);
+    second = float4(0.0);
+    const uint octaves = tile.options.x;
+    const uint species = min(firstVariant + min(uint(TreeRandom(state) * float(variants)), variants - 1), MaxSpecies - 1);
+    const float4 traits = sowVegetation[0].species[species];
+    // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
+    const float e = 0.25;
+    const float3 du = Local(TreeDelta(site.u + e, site.v), Height(TreeDelta(site.u + e, site.v), octaves)) - site.position;
+    const float3 dv = Local(TreeDelta(site.u, site.v + e), Height(TreeDelta(site.u, site.v + e), octaves)) - site.position;
+    const float3 up = normalize(site.local);
+    // <= et borné à 1 : une pente maximale nulle n'en laisse aucun, même là où le float arrondit le sol à plat.
+    if (min(abs(dot(normalize(cross(du, dv)), up)), 1.0) <= traits.z) {
+        return false;
+    }
+    const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * scaleFactor;
+    first = float4(site.position, scale);
+    second = float4(up, float(species + 16 * layer) * 8.0 + TreeRandom(state) * 6.2831853);
+    return true;
 }
 
 // Une place de la plaine : false sans arbre, sinon ses deux float4 (voir trees).
@@ -1065,79 +1185,37 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
     first = float4(0.0);
     second = float4(0.0);
     const float radius = job.shape.x;
-    const float relief = max(job.shape.y, 1.0);
-    const uint octaves = tile.options.x;
     const float step = float(TileQuads) / float(TreeGrid);
-    const uint gi = c % TreeGrid;
-    const uint gj = c / TreeGrid;
-    const uint x = job.cell.z * TreeGrid + gi;
-    const uint y = job.cell.w * TreeGrid + gj;
+    const uint x = job.cell.z * TreeGrid + c % TreeGrid;
+    const uint y = job.cell.w * TreeGrid + c / TreeGrid;
     const uint used = sowVegetation[0].counts.y;
     const uint biomeCount = min(sowVegetation[0].counts.x, MaxBiomes);
     for (uint side = 1; side <= MaxTreeBlock; ++side) {
         if (((used >> side) & 1u) == 0) {
             continue;
         }
-        // Hasard tiré de la place (ou du bloc) sur la face et de la graine, pas de la case : mêmes arbres à chaque visite.
-        uint state;
-        float u, v;
-        if (side == 1) {
-            state = TreeHash(job.options.y ^ TreeHash(job.cell.x * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu));
-            // Décalage d'au plus 30 % de la case : deux voisins restent à 40 % de l'espacement au moins.
-            u = (float(gi) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
-            v = (float(gj) + 0.5 + (TreeRandom(state) - 0.5) * 0.6) * step;
-        } else {
-            if (!TreeBlockKeeps(job.options.y, job.cell.x, x, y, side, state)) {
-                continue;
-            }
-            const float i = float(int(x / side * side - job.cell.z * TreeGrid));
-            const float j = float(int(y / side * side - job.cell.w * TreeGrid));
-            // Dans la plaine de la place : un bloc à cheval sur deux plaines n'en sort pas son arbre.
-            u = clamp((i + float(side) * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
-            v = clamp((j + float(side) * (0.5 + (TreeRandom(state) - 0.5) * 0.6)) * step, 0.0, float(TileQuads));
+        uint state = 0;
+        if (side != 1 && !TreeBlockKeeps(job.options.y, job.cell.x, x, y, side, state)) {
+            continue;
         }
+        float u, v;
+        TreeInBlock(job, x, y, side, state, u, v);
         const float keep = TreeRandom(state);
-        const float3 delta = TreeDelta(u, v);
-        // Forêts : taches de 150 m à 1 km, au niveau zéro (le relief ne les déplace pas), plus ou moins couvrantes
-        // selon le biome. Quelques arbres isolés ailleurs. Le tri se fait avant le relief, cher, sur la forêt la plus
-        // dense des biomes.
-        const float3 flat = (tile.center.xyz + delta) * radius;
-        const float noise = ForestNoise(flat);
-        // Humidité du relief : plus de forêts au fond des vallons, moins sur les crêtes.
-        const float wet = SampleWetness(u, v);
-        const float moreForest = ReliefForest * wet;
+        // Le tri se fait avant le relief, cher, sur la forêt la plus dense des biomes ; quelques arbres isolés ailleurs.
+        SowSite site = PrepareSite(u, v, radius);
         float densest = 0.0;
         for (uint b = 0; b < biomeCount; ++b) {
-            densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[b].zones.w + moreForest), 0.03));
+            densest = max(densest, sowVegetation[0].biomes[b].humidity.z * max(ForestMask(site.noise, sowVegetation[0].biomes[b].zones.w + site.moreForest), 0.03));
         }
         if (keep >= densest) {
             continue;
         }
-        float2 zones;
-        const float height = Height(delta, octaves, zones);
-        // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
-        if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
-            continue;
-        }
-        const float3 position = Local(delta, height);
-        const float3 local = tile.center.xyz * tile.axisN.w + position;
-        const float altitude = height / relief;
-        const float2 climate = ClimateAt(radius, relief, job.climate.xyz, job.climate.w, local) + float2(0.0, ReliefHumidity * wet);
-        const float3 zoneShares = ZoneShares(zones);
-        const float3 lithology = Lithology(flat, zones.y);
-        const float4 geology = float4(lithology, SoilDepth(wet, lithology));
-        float weights[MaxBiomes];
-        float remaining = 1.0;
-        for (uint b = 0; b < MaxBiomes; ++b) {
-            weights[b] = b < biomeCount ? BiomeFit(sowVegetation[0].biomes[b], zoneShares, altitude, climate, geology) * remaining : 0.0;
-            remaining -= weights[b];
-        }
-        const uint biome = GroveBiome(flat, weights, biomeCount);
+        const uint biome = SiteBiome(job, site);
         if (biome == MaxBiomes
-            || keep >= sowVegetation[0].biomes[biome].humidity.z * max(ForestMask(noise, sowVegetation[0].biomes[biome].zones.w + moreForest), 0.03)) {
+            || keep >= sowVegetation[0].biomes[biome].humidity.z * max(ForestMask(site.noise, sowVegetation[0].biomes[biome].zones.w + site.moreForest), 0.03)) {
             continue;
         }
-        const uint choice = GroveSpecies(flat, biome);
+        const uint choice = GroveSpecies(site.flat, biome);
         uint firstVariant, variants;
         if (GroveSide(biome, choice, firstVariant, variants) != side) {
             continue;
@@ -1149,7 +1227,7 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         for (uint k = 0; k < 4 && alone; ++k) {
             const float2 offset = k == 0 ? float2(reach, 0.0) : k == 1 ? float2(-reach, 0.0) : k == 2 ? float2(0.0, reach) : float2(0.0, -reach);
             const float3 beside = (tile.center.xyz + TreeDelta(u + offset.x, v + offset.y)) * radius;
-            const uint other = GroveBiome(beside, weights, biomeCount);
+            const uint other = GroveBiome(beside, site.weights, biomeCount);
             if (other != MaxBiomes && sowVegetation[0].biomes[other].humidity.z > 0.0) {
                 uint otherFirst, otherVariants;
                 const uint otherSide = GroveSide(other, GroveSpecies(beside, other), otherFirst, otherVariants);
@@ -1159,28 +1237,69 @@ bool SowPlace(TreeJob job, uint c, out float4 first, out float4 second)
         if (!alone) {
             continue;
         }
-        const uint species = min(firstVariant + min(uint(TreeRandom(state) * float(variants)), variants - 1), MaxSpecies - 1);
-        const float4 traits = sowVegetation[0].species[species];
-        // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
-        const float e = 0.25;
-        const float3 du = Local(TreeDelta(u + e, v), Height(TreeDelta(u + e, v), octaves)) - position;
-        const float3 dv = Local(TreeDelta(u, v + e), Height(TreeDelta(u, v + e), octaves)) - position;
-        const float3 up = normalize(local);
-        // <= et borné à 1 : une pente maximale nulle n'en laisse aucun, même là où le float arrondit le sol à plat.
-        if (min(abs(dot(normalize(cross(du, dv)), up)), 1.0) <= traits.z) {
-            continue;
+        // Trop pentu : un autre côté de bloc peut encore y poser le sien.
+        if (Plant(site, firstVariant, variants, sowVegetation[0].biomes[biome].humidity.w, state, 0, first, second)) {
+            return true;
         }
-        const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * sowVegetation[0].biomes[biome].humidity.w;
-        first = float4(position, scale);
-        second = float4(up, float(species) * 8.0 + TreeRandom(state) * 6.2831853);
-        return true;
     }
     return false;
 }
 
+// Une place du sous-bois (jeunes arbres, buissons) : sur sa propre grille, sans les blocs d'espacement des arbres, plus
+// clairsemé hors des forêts (UnderstoryOpen) ; écartée près du pied de l'arbre que chaque bloc employé pourrait poser,
+// qu'il ait poussé ou non (le savoir demanderait le relief de chacun).
+bool SowUnderstory(TreeJob job, uint c, out float4 first, out float4 second)
+{
+    first = float4(0.0);
+    second = float4(0.0);
+    const float radius = job.shape.x;
+    const float step = float(TileQuads) / float(TreeGrid);
+    const uint gi = c % TreeGrid;
+    const uint gj = c / TreeGrid;
+    const uint x = job.cell.z * TreeGrid + gi;
+    const uint y = job.cell.w * TreeGrid + gj;
+    const uint used = sowVegetation[0].counts.y;
+    const uint biomeCount = min(sowVegetation[0].counts.x, MaxBiomes);
+    uint state = TreeHash(job.options.y ^ TreeHash(job.cell.x * 0x632be5abu ^ TreeHash(x) ^ TreeHash(y) * 0x85ebca6bu) ^ UnderstorySeed);
+    const float u = (float(gi) + 0.5 + (TreeRandom(state) - 0.5) * UnderstoryJitter) * step;
+    const float v = (float(gj) + 0.5 + (TreeRandom(state) - 0.5) * UnderstoryJitter) * step;
+    const float keep = TreeRandom(state);
+    SowSite site = PrepareSite(u, v, radius);
+    float densest = 0.0;
+    for (uint b = 0; b < biomeCount; ++b) {
+        densest = max(densest, sowVegetation[0].biomes[b].soil.z * max(ForestMask(site.noise, sowVegetation[0].biomes[b].zones.w + site.moreForest), UnderstoryOpen));
+    }
+    if (keep >= densest) {
+        return false;
+    }
+    for (uint side = 1; side <= MaxTreeBlock; ++side) {
+        if (((used >> side) & 1u) == 0) {
+            continue;
+        }
+        uint treeState = 0;
+        if (side != 1) {
+            TreeBlockKeeps(job.options.y, job.cell.x, x, y, side, treeState);
+        }
+        float tu, tv;
+        TreeInBlock(job, x, y, side, treeState, tu, tv);
+        const float2 gap = float2(tu - u, tv - v);
+        if (dot(gap, gap) < UnderstoryClearance * UnderstoryClearance * step * step) {
+            return false;
+        }
+    }
+    const uint biome = SiteBiome(job, site);
+    if (biome == MaxBiomes
+        || keep >= sowVegetation[0].biomes[biome].soil.z * max(ForestMask(site.noise, sowVegetation[0].biomes[biome].zones.w + site.moreForest), UnderstoryOpen)) {
+        return false;
+    }
+    const uint entry = sowVegetation[0].understorySpecies[biome][UnderstoryChoice(site.flat, biome)];
+    return Plant(site, entry & 255u, max(entry >> 8, 1u), sowVegetation[0].biomes[biome].soil.w, state, 1, first, second);
+}
+
+
 groupshared uint treeBase;
 
-// Semis d'une plaine (constants.job) : une place par thread, TreeGrid² / GroupSize groupes par plaine. Un seul
+// Semis d'une plaine (constants.job) : une place par thread, 2 TreeGrid² / GroupSize groupes par plaine. Un seul
 // groupe par plaine laissait presque tout le GPU sans travail (7,6 ms pour 4 plaines sur une RX 7700 XT). Chaque
 // groupe compte ses arbres, en réserve la place d'un coup dans la liste de la plaine (un atomique global par groupe),
 // puis les écrit.
@@ -1211,7 +1330,10 @@ void computeTrees(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
 
     float4 first;
     float4 second;
-    const bool sown = SowPlace(job, group.x * GroupSize + thread, first, second);
+    // Les groupes des arbres, puis ceux du sous-bois (TreeGrid² places chacun, un multiple de GroupSize).
+    const uint place = group.x * GroupSize + thread;
+    const bool sown = place < TreeGrid * TreeGrid ? SowPlace(job, place, first, second)
+                                                  : SowUnderstory(job, place - TreeGrid * TreeGrid, first, second);
     uint slot = 0;
     if (sown) {
         InterlockedAdd(treeCount, 1u, slot);
@@ -1224,7 +1346,7 @@ void computeTrees(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
     }
     GroupMemoryBarrierWithGroupSync();
     if (sown) {
-        const uint at = job.options.x * TreeGrid * TreeGrid + treeBase + slot;
+        const uint at = job.options.x * 2 * TreeGrid * TreeGrid + treeBase + slot;
         trees[at * 2 + 0] = first;
         trees[at * 2 + 1] = second;
     }
