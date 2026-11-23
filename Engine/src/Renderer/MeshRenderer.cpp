@@ -1,5 +1,6 @@
 #include "Renderer/MeshRenderer.hpp"
 
+#include "Flux/Animation/AnimationLibrary.hpp"
 #include "Flux/Animation/Animator.hpp"
 #include "Flux/Core/JobSystem.hpp"
 
@@ -1142,7 +1143,7 @@ namespace Flux {
             const GpuModel& model = *draw.model;
             if (!model.skeleton.joints.empty()) {
                 const auto firstJoint = static_cast<std::uint32_t>(m_jointMatrices.size());
-                Pose(model, scene.TryGet<AnimatorComponent>(draw.transform->entity));
+                Pose(model, scene, draw.transform->entity);
                 const std::span<const Math::Matrix4f> joints = m_poseEvaluator.GetJointMatrices();
                 m_jointMatrices.insert(m_jointMatrices.end(), joints.begin(), joints.end());
                 draw.data.normal[1][3] = std::bit_cast<float>(firstJoint);
@@ -1663,8 +1664,13 @@ namespace Flux {
     }
 
     // Pose d'un modèle animé, d'après les animations pondérées de son AnimatorComponent ; sans lui, la pose de repos.
-    void MeshRenderer::Pose(const GpuModel& model, const AnimatorComponent* animator) {
-        Animator::Pose(m_poseEvaluator, model.skeleton, animator);
+    // Les animations venues des fichiers du graphe sont celles que la simulation a lues (rien n'est lu ici).
+    void MeshRenderer::Pose(const GpuModel& model, const Scene& scene, Entity entity) {
+        const auto* animator = scene.TryGet<AnimatorComponent>(entity);
+        const auto* component = scene.TryGet<ModelComponent>(entity);
+        const AnimationSet* set = m_animations && animator && component ? m_animations->FindAnimationSet(component->model, animator->graph)
+                                                                        : nullptr;
+        Animator::Pose(m_poseEvaluator, model.skeleton, set, animator);
     }
 
     // Envoie au GPU les matrices des os (par colonnes comme jointColumns dans shaders/Mesh.slang), celles des entités

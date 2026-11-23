@@ -303,6 +303,14 @@ namespace Flux {
             return std::unexpected("JSON illisible (attendu : un objet { ... })");
         }
         AnimationGraph graph;
+        if (const auto files = document.find("files"); files != document.end()) {
+            if (!files->is_array() || !std::ranges::all_of(*files, [](const Json& file) { return file.is_string(); })) {
+                return std::unexpected("« files » doit être [\"Animations/fichier.glb\", ...]");
+            }
+            for (const Json& file : *files) {
+                graph.files.push_back(file.get<std::string>());
+            }
+        }
         if (auto read = ReadParameters(document, graph); !read) {
             return std::unexpected(read.error());
         }

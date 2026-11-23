@@ -1271,6 +1271,10 @@ namespace Flux {
         m_impl->meshes->SetThrusterPreview(preview);
     }
 
+    void Renderer::SetAnimations(const AnimationLibrary* animations) {
+        m_impl->meshes->SetAnimations(animations);
+    }
+
     void Renderer::SetProjectiles(std::span<const Projectile> projectiles, std::span<const Impact> impacts) {
         m_impl->projectiles = projectiles;
         m_impl->impacts = impacts;

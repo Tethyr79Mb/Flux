@@ -100,6 +100,7 @@ namespace Flux {
         }
         m_renderer = std::move(renderer.value());
         m_renderer->SetJobSystem(m_jobs.get());
+        m_renderer->SetAnimations(&m_simulation.GetAnimations());
         m_renderer->SetVSync(config.vsync);
         m_renderer->SetSwapchainImages(config.swapchainImages);
         m_renderer->SetTemporalAA(config.temporalAA);

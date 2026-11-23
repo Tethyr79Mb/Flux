@@ -487,7 +487,10 @@ planète donne directement le sien comme indice d'instance.
   calés en phase) et ses transitions à conditions (`speed > 0.1`), essayées dans l'ordre du fichier, avec fondu. Le
   graphe du personnage est un asset du jeu (`Animations/Personnage.fluxanim`) ; le moteur ne pose que les paramètres
   d'un personnage (`AnimationParameters` : vitesse, allure, temps en l'air, siège), le jeu les siens
-  (`Animator::SetParameter`).
+  (`Animator::SetParameter`). `"files"` ajoute aux animations du modèle celles d'autres fichiers du même squelette
+  (une animation Mixamo par fichier) : `RetargetAnimations` recâble leurs courbes sur les os du modèle par nom
+  (préfixe `mixamorig:` ignoré) ; un modèle et un graphe donnent un `AnimationSet`, dont les indices sont ceux des
+  clips.
 - Simulation (FluxSim, aussi le serveur) : `AnimationLibrary` lit squelettes et graphes à la première demande
   (`Simulation::GetAnimations`, vidée à chaque `Start`) ; `Animator::Update` tient pour chaque couche une pile de 4
   fondus au plus (le plus récent prend sa part sur les autres : un fondu interrompu ne saute pas) et en tire jusqu'à
@@ -496,7 +499,8 @@ planète donne directement le sien comme indice d'instance.
 - Objets accrochés à un os (`BoneAttachmentComponent`, `Attachments::Update` après l'animation, et à chaque image
   dans l'éditeur jeu arrêté) : la simulation calcule la pose du parent (`Animator::Pose`, seulement s'il porte un
   objet) et place l'enfant sur l'os, décalé dans le repère de l'os.
-- Rendu : `MeshRenderer::Pose` échantillonne ces animations (`PoseEvaluator::EvaluateLayers` : moyenne pondérée dans
+- Rendu : `MeshRenderer::Pose` échantillonne ces animations (celles des fichiers du graphe prises dans l'`AnimationSet`
+  déjà lu par la simulation, `Renderer::SetAnimations`) (`PoseEvaluator::EvaluateLayers` : moyenne pondérée dans
   chaque couche, rotations en nlerp, puis chaque couche sur les os de son masque) et envoie les matrices des os au GPU.
 
 ## Armes (`Game::Weapons`) et projectiles (`Projectiles`)

@@ -9,6 +9,7 @@ namespace Flux {
     class PoseEvaluator;
     class Scene;
     struct ModelSkeleton;
+    struct AnimationSet;
     struct AnimationGraph;
     struct AnimatorComponent;
 
@@ -22,8 +23,10 @@ namespace Flux {
 
         // Pose d'un modèle d'après les animations pondérées de son animateur, couche par couche ; sans animateur, la
         // pose de repos ; rien de joué encore (éditeur, avant le premier pas), la première image de son animation.
-        // skeleton doit être celui du fichier lu par la simulation (mêmes indices d'animations et d'os).
-        FLUX_SIM_API void Pose(PoseEvaluator& evaluator, const ModelSkeleton& skeleton, const AnimatorComponent* animator);
+        // skeleton doit être celui du fichier lu par la simulation (mêmes os) ; set, ses animations avec celles des
+        // fichiers du graphe (AnimationLibrary::FindAnimationSet), nullptr : celles du modèle seules.
+        FLUX_SIM_API void Pose(PoseEvaluator& evaluator, const ModelSkeleton& skeleton, const AnimationSet* set,
+                               const AnimatorComponent* animator);
 
         // Valeur d'un paramètre déclaré par le graphe de l'animateur, pour les pas suivants ; faux s'il n'y est pas.
         FLUX_SIM_API bool SetParameter(AnimatorComponent& animator, const AnimationGraph& graph, std::string_view name, float value);
