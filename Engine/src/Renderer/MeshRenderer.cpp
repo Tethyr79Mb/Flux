@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <format>
 #include <numbers>
+#include <array>
 #include <span>
 
 namespace Flux {
@@ -1660,22 +1661,23 @@ namespace Flux {
         return material.blend || draw.tint.a < 1.0f;
     }
 
-    // Pose d'un modèle animé, d'après la lecture de son AnimatorComponent ; sans lui, la pose de repos.
-    // Avant le jeu (rien de joué encore), la première image de l'animation choisie.
+    // Pose d'un modèle animé, d'après les animations pondérées de son AnimatorComponent ; sans lui, la pose de repos.
     void MeshRenderer::Pose(const GpuModel& model, const AnimatorComponent* animator) {
-        if (!animator) {
-            m_poseEvaluator.Evaluate(model.skeleton, {});
+        const std::vector<ModelAnimation>& animations = model.skeleton.animations;
+        if (!animator || animator->clipCount == 0) {
+            // Rien de joué encore (éditeur, avant le premier pas) : la première image de l'animation choisie.
+            m_poseEvaluator.Evaluate(model.skeleton, AnimationSample{animator ? FindAnimation(model.skeleton, animator->animation) : nullptr, 0.0, false});
             return;
         }
-        const std::string& playing = animator->playing.empty() ? animator->animation : animator->playing;
-        const AnimationSample to{FindAnimation(model.skeleton, playing), animator->time, animator->loop && !animator->playingOnce};
-        if (animator->fade >= 1.0f) {
-            m_poseEvaluator.Evaluate(model.skeleton, to);
-            return;
+        // Mêmes indices que dans la simulation : le même fichier, lu de la même façon (AnimationLibrary).
+        std::array<AnimationSample, AnimatorComponent::MaxClips> samples;
+        std::size_t count = 0;
+        for (const AnimationClipWeight& clip : std::span(animator->clips).first(animator->clipCount)) {
+            if (clip.animation >= 0 && static_cast<std::size_t>(clip.animation) < animations.size()) {
+                samples[count++] = {&animations[static_cast<std::size_t>(clip.animation)], clip.time, clip.loop, clip.weight};
+            }
         }
-        const AnimationSample from{FindAnimation(model.skeleton, animator->previous), animator->previousTime,
-                                   animator->loop && !animator->previousOnce};
-        m_poseEvaluator.Evaluate(model.skeleton, from, to, animator->fade);
+        m_poseEvaluator.EvaluateBlend(model.skeleton, std::span(samples).first(count));
     }
 
     // Envoie au GPU les matrices des os (par colonnes comme jointColumns dans shaders/Mesh.slang), celles des entités

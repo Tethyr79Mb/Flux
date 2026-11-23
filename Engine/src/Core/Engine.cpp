@@ -111,10 +111,6 @@ namespace Flux {
         m_renderer->SetModelDetail(config.modelDetail);
         m_renderer->SetAmbientOcclusion(config.ambientOcclusion);
         m_renderer->SetBloom(config.bloom ? Renderer::DefaultBloom : 0.0f);
-        // Les modèles sont chargés par le rendu : la simulation y lit la durée des animations des sièges.
-        m_simulation.SetAnimationDurations([renderer = m_renderer.get()](const std::filesystem::path& model, const std::string& animation) {
-            return renderer->GetAnimationDuration(model, animation);
-        });
         m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
         m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {

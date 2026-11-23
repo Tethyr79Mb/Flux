@@ -1,19 +1,23 @@
 // Animation squelettique : lecture du squelette et des courbes glTF, poses (interpolations, hiérarchie, fondu),
-// choix de l'animation d'un personnage selon ses pas (Animator).
+// graphes d'animation (lecture du fichier, états, transitions, mélange marche et course, fondus interrompus).
 #include "Check.hpp"
 
 #include "Flux/Animation/Animation.hpp"
+#include "Flux/Animation/AnimationGraph.hpp"
+#include "Flux/Animation/AnimationLibrary.hpp"
 #include "Flux/Animation/Animator.hpp"
 #include "Flux/Assets/Model.hpp"
 #include "Flux/Scene/Scene.hpp"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace Flux;
@@ -144,8 +148,9 @@ namespace {
         CHECK(Near(Skinned(*model, pose, 0), {-h, h, 0}));
         pose.Evaluate(skeleton, {&animation, 1.5, false});
         CHECK(Near(Skinned(*model, pose, 0), {-3, 0, 0}));
-        // Fondu à moitié entre le repos et la mi-animation : 22,5° et bras à 1,5 m.
-        pose.Evaluate(skeleton, {}, {&animation, 0.5, true}, 0.5f);
+        // Mélange à parts égales du repos et de la mi-animation : 22,5° et bras à 1,5 m.
+        const AnimationSample halves[] = {{nullptr, 0.0, true, 0.5f}, {&animation, 0.5, true, 0.5f}};
+        pose.EvaluateBlend(skeleton, halves);
         const float angle = 0.125f * 3.14159265f;
         CHECK(Near(Skinned(*model, pose, 0), {-1.5f * std::sin(angle), 1.5f * std::cos(angle), 0}));
         return true;
@@ -178,68 +183,175 @@ namespace {
         return true;
     }
 
+    // Squelette d'un personnage : les animations du graphe du jeu, sans courbes (seules leurs durées comptent ici).
+    ModelSkeleton HeroSkeleton() {
+        ModelSkeleton skeleton;
+        skeleton.nodes.push_back({"hanches", -1, {}, {}, {1, 1, 1}});
+        for (const auto& [name, duration] : {std::pair{"Repos", 2.0f}, {"Marche", 1.0f}, {"Course", 0.5f}, {"Chute", 1.0f},
+                                             {"S'asseoir", 1.5f}, {"Assis", 1.0f}, {"Se lever", 1.2f}}) {
+            skeleton.animations.push_back({name, duration, {}});
+        }
+        return skeleton;
+    }
+
+    // Part de l'animation name dans la sortie de l'animateur, et son instant.
+    struct Clip
+    {
+        float weight = 0.0f;
+        float time = 0.0f;
+    };
+
+    Clip Find(const AnimatorComponent& animator, const ModelSkeleton& skeleton, std::string_view name) {
+        Clip clip;
+        for (std::size_t c = 0; c < animator.clipCount; ++c) {
+            if (skeleton.animations[static_cast<std::size_t>(animator.clips[c].animation)].name == name) {
+                clip.weight += animator.clips[c].weight;
+                clip.time = animator.clips[c].time;
+            }
+        }
+        return clip;
+    }
+
+    float TotalWeight(const AnimatorComponent& animator) {
+        float total = 0.0f;
+        for (std::size_t c = 0; c < animator.clipCount; ++c) {
+            total += animator.clips[c].weight;
+        }
+        return total;
+    }
+
+    bool Close(float a, float b) {
+        return std::abs(a - b) < 1.0e-4f;
+    }
+
+    bool RunGraphParsingTests() {
+        const auto parse = [](std::string_view text) { return ParseAnimationGraph(text); };
+        const auto graph = parse(R"({"parameters": {"speed": 0, "armed": true}, "start": "B",
+            "states": [{"name": "A", "animation": "a"}, {"name": "B", "blend": "speed", "points": [{"animation": "a", "value": 1},
+                       {"animation": "b", "value": 2, "phase": 0.5}]}, {"name": "C", "animation": "c", "loop": false, "tag": "fin"}],
+            "transitions": [{"from": "A", "to": "B", "when": ["speed >= 1.5", "armed != 0"], "duration": 0.5},
+                            {"to": "C", "when": ["speed<-2"], "atEnd": true}]})");
+        if (!graph) {
+            std::printf("  %s\n", graph.error().c_str());
+        }
+        CHECK(graph && graph->states.size() == 3 && graph->start == 1 && graph->FindTag("fin") == 2 && graph->FindState("Z") < 0);
+        CHECK(graph->parameters[static_cast<std::size_t>(graph->FindParameter("armed"))].value == 1.0f);
+        const AnimationGraph::State& blend = graph->states[1];
+        CHECK(blend.points.size() == 2 && blend.points[1].phase == 0.5f && blend.blendParameter == graph->FindParameter("speed"));
+        const AnimationGraph::Transition& first = graph->transitions[0];
+        CHECK(first.from == 0 && first.to == 1 && first.duration == 0.5f && first.conditions.size() == 2);
+        CHECK(first.conditions[0].compare == AnimationGraph::Compare::GreaterEqual && first.conditions[0].value == 1.5f);
+        const AnimationGraph::Transition& second = graph->transitions[1];
+        CHECK(second.from == -1 && second.atEnd && second.conditions[0].compare == AnimationGraph::Compare::Less
+              && second.conditions[0].value == -2.0f);
+        // Fautes de frappe dites, pas ignorées.
+        CHECK(!parse(R"({"states": []})"));
+        CHECK(!parse(R"({"states": [{"name": "A"}]})"));
+        CHECK(!parse(R"({"states": [{"name": "A", "animation": "a"}, {"name": "A", "animation": "b"}]})"));
+        CHECK(!parse(R"({"states": [{"name": "A", "animation": "a"}], "transitions": [{"to": "B"}]})"));
+        CHECK(!parse(R"({"states": [{"name": "A", "animation": "a"}], "transitions": [{"to": "A", "when": ["vitesse > 1"]}]})"));
+        CHECK(!parse(R"({"parameters": {"v": 0}, "states": [{"name": "A", "animation": "a"}], "transitions": [{"to": "A", "when": ["v >> 1"]}]})"));
+        CHECK(!parse(R"({"parameters": {"v": 0}, "states": [{"name": "A", "blend": "v", "points": [{"animation": "a", "value": 2},
+                         {"animation": "b", "value": 1}]}]})"));
+        CHECK(!parse(R"({"states": [{"name": "A", "points": [{"animation": "a"}]}]})")); // sans paramètre de mélange
+        return true;
+    }
+
     bool RunAnimatorTests() {
+        // Le graphe du personnage du jeu, tel qu'il est livré.
+        AnimationLibrary library;
+        library.SetAssetsDirectory(FLUX_GAME_ASSETS);
+        const AnimationGraph* graph = library.GetGraph(DefaultCharacterGraph);
+        CHECK(graph != nullptr);
+        library.SetSkeleton("hero.glb", HeroSkeleton());
+        const ModelSkeleton& skeleton = *library.GetSkeleton("hero.glb");
+
         Scene scene;
         const Entity hero = scene.CreateEntity("Héros");
+        scene.Add<ModelComponent>(hero).model = "hero.glb";
         scene.Add<CharacterComponent>(hero, CharacterComponent{.walkSpeed = 2.0f, .runSpeed = 5.0f});
-        scene.Add<AnimatorComponent>(hero, AnimatorComponent{.animation = "Marche", .idleAnimation = "Repos",
-                                                             .runAnimation = "Course", .airAnimation = "Chute"});
+        scene.Add<AnimatorComponent>(hero, AnimatorComponent{.graph = std::string(DefaultCharacterGraph)});
         const auto& animator = scene.Get<AnimatorComponent>(hero);
         auto& character = scene.Get<CharacterComponent>(hero);
 
         // Début du jeu, immobile : le repos, sans fondu.
-        Animator::Update(scene, 0.1);
-        CHECK(animator.playing == "Repos" && animator.fade == 1.0f);
-        // Il marche : fondu du repos vers la marche, jouée à vitesse 1 à sa vitesse de marche.
+        Animator::Update(scene, library, 0.1);
+        CHECK(animator.layerCount == 1 && Close(Find(animator, skeleton, "Repos").weight, 1.0f));
+        CHECK(Close(Find(animator, skeleton, "Repos").time, 0.1f));
+        // Il marche (allure 1) : fondu du repos vers la marche, jouée à vitesse 1.
         character.groundSpeed = 2.0f;
-        Animator::Update(scene, 0.1);
-        CHECK(animator.playing == "Marche" && animator.previous == "Repos");
-        CHECK(std::abs(animator.fade - 0.4f) < 1.0e-5f && std::abs(animator.time - 0.1) < 1.0e-9);
-        Animator::Update(scene, 0.1);
-        CHECK(std::abs(animator.time - 0.2) < 1.0e-9);
-        // Il court (au-delà de 3,5 m/s) : la course, à 4 / 5 de sa vitesse.
-        character.groundSpeed = 4.0f;
-        Animator::Update(scene, 0.1);
-        CHECK(animator.playing == "Course" && animator.previous == "Marche" && std::abs(animator.time - 0.08) < 1.0e-6);
-        Animator::Update(scene, 1.0);
-        CHECK(animator.fade == 1.0f);
-        // En l'air un instant (une marche) : rien ne change ; plus longtemps (saut) : l'animation en l'air.
+        Animator::Update(scene, library, 0.1);
+        CHECK(animator.layerCount == 2 && Close(Find(animator, skeleton, "Marche").weight, 0.4f));
+        CHECK(Close(Find(animator, skeleton, "Repos").weight, 0.6f) && Close(Find(animator, skeleton, "Marche").time, 0.1f));
+        // Entre marche et course (allure 1,5) : moitié de chacune, au même point de leur cycle.
+        character.groundSpeed = 3.5f;
+        Animator::Update(scene, library, 1.0);
+        CHECK(animator.layerCount == 1 && Close(Find(animator, skeleton, "Marche").weight, 0.5f)
+              && Close(Find(animator, skeleton, "Course").weight, 0.5f));
+        const float walkCycle = Find(animator, skeleton, "Marche").time / 1.0f;
+        const float runCycle = Find(animator, skeleton, "Course").time / 0.5f;
+        CHECK(Close(walkCycle, runCycle));
+        // Plus vite que la course (6 m/s) : la course seule, jouée 6 / 5 plus vite.
+        character.groundSpeed = 6.0f;
+        Animator::Update(scene, library, 0.1);
+        const float runBefore = Find(animator, skeleton, "Course").time;
+        Animator::Update(scene, library, 0.1);
+        CHECK(Close(Find(animator, skeleton, "Course").weight, 1.0f) && Close(Find(animator, skeleton, "Course").time - runBefore, 0.12f));
+
+        // Arrêt puis départ avant la fin du fondu : trois couches, aucune part perdue (pas de saut de pose), et la
+        // marche reprend là où son cycle en était.
+        character.groundSpeed = 0.0f;
+        Animator::Update(scene, library, 0.1);
+        CHECK(animator.layerCount == 2);
+        character.groundSpeed = 2.0f;
+        Animator::Update(scene, library, 0.1);
+        CHECK(animator.layerCount == 3 && Close(TotalWeight(animator), 1.0f));
+        CHECK(Close(animator.layers[2].fade, 0.4f) && Close(animator.layers[1].fade, 0.8f));
+        Animator::Update(scene, library, 1.0);
+        CHECK(animator.layerCount == 1);
+
+        // En l'air un instant (une marche d'escalier) : rien ne change ; plus longtemps (saut) : la chute.
         character.groundSpeed = 0.0f;
         character.airTime = 0.1f;
-        Animator::Update(scene, 0.1);
-        CHECK(animator.playing == "Repos");
+        Animator::Update(scene, library, 1.0);
+        CHECK(Close(Find(animator, skeleton, "Repos").weight, 1.0f));
         character.airTime = 0.3f;
-        Animator::Update(scene, 0.1);
-        CHECK(animator.playing == "Chute" && animator.previous == "Repos");
+        Animator::Update(scene, library, 1.0);
+        CHECK(Close(Find(animator, skeleton, "Chute").weight, 1.0f));
         character.airTime = 0.0f;
-        Animator::Update(scene, 1.0);
-        CHECK(animator.playing == "Repos");
-        character.groundSpeed = 4.0f;
-        Animator::Update(scene, 1.0);
-        CHECK(animator.playing == "Course");
-        // À l'arrêt, la course qui s'efface garde sa vitesse de lecture (4 / 5), pas celle de l'animateur.
-        character.groundSpeed = 0.0f;
-        Animator::Update(scene, 0.1);
-        const double fading = animator.previousTime;
-        Animator::Update(scene, 0.1);
-        CHECK(animator.previous == "Course" && std::abs(animator.previousTime - fading - 0.08) < 1.0e-6);
-        character.groundSpeed = 4.0f;
-        Animator::Update(scene, 1.0);
-        // Sans animation de repos, la marche se fige à l'arrêt.
-        scene.Get<AnimatorComponent>(hero).idleAnimation.clear();
-        scene.Get<AnimatorComponent>(hero).runAnimation.clear();
-        character.groundSpeed = 3.0f;
-        Animator::Update(scene, 0.5);
-        const double walking = animator.time;
-        character.groundSpeed = 0.0f;
-        Animator::Update(scene, 0.5);
-        CHECK(animator.playing == "Marche" && animator.time == walking);
 
-        // Objet qui n'est pas un personnage : l'animation tourne à sa vitesse.
+        // Assis dès le début du jeu : directement assis, sans fondu depuis le repos.
+        const Entity seated = scene.CreateEntity("Pilote");
+        scene.Add<ModelComponent>(seated).model = "hero.glb";
+        scene.Add<CharacterComponent>(seated).seatState = SeatState::Seated;
+        scene.Add<AnimatorComponent>(seated, AnimatorComponent{.graph = std::string(DefaultCharacterGraph)});
+        Animator::Update(scene, library, 0.1);
+        const auto& pilot = scene.Get<AnimatorComponent>(seated);
+        CHECK(pilot.layerCount == 1 && Close(Find(pilot, skeleton, "Assis").weight, 1.0f));
+        // Il se lève : jouée une fois, arrêtée sur sa dernière image.
+        scene.Get<CharacterComponent>(seated).seatState = SeatState::StandingUp;
+        Animator::Update(scene, library, 3.0);
+        CHECK(Close(Find(pilot, skeleton, "Se lever").weight, 1.0f) && Close(Find(pilot, skeleton, "Se lever").time, 1.2f));
+        // Durée des gestes lue par les sièges : celle de leur animation, à la vitesse de l'animateur.
+        CHECK(Close(Animator::GetTagDuration(library, pilot, "hero.glb", SitDownTag), 1.5f));
+        scene.Get<AnimatorComponent>(seated).speed = 2.0f;
+        CHECK(Close(Animator::GetTagDuration(library, pilot, "hero.glb", StandUpTag), 0.6f));
+        CHECK(Animator::GetTagDuration(library, pilot, "inconnu.glb", StandUpTag) == 0.0f);
+
+        // Paramètres posés par le jeu : seulement ceux que le graphe déclare.
+        CHECK(Animator::SetParameter(scene.Get<AnimatorComponent>(hero), *graph, "airTime", 0.0f));
+        CHECK(!Animator::SetParameter(scene.Get<AnimatorComponent>(hero), *graph, "armed", 1.0f));
+
+        // Objet qui n'est pas un personnage, sans graphe : son animation (la première) tourne à sa vitesse.
         const Entity door = scene.CreateEntity("Porte");
+        scene.Add<ModelComponent>(door).model = "hero.glb";
         scene.Add<AnimatorComponent>(door, AnimatorComponent{.speed = 2.0f});
-        Animator::Update(scene, 0.25);
-        CHECK(scene.Get<AnimatorComponent>(door).time == 0.5 && scene.Get<AnimatorComponent>(door).fade == 1.0f);
+        Animator::Update(scene, library, 0.25);
+        CHECK(Close(Find(scene.Get<AnimatorComponent>(door), skeleton, "Repos").time, 0.5f));
+        // Modèle inconnu : rien à jouer, la pose de repos.
+        scene.Get<ModelComponent>(door).model = "absent.glb";
+        Animator::Update(scene, library, 0.25);
+        CHECK(scene.Get<AnimatorComponent>(door).clipCount == 0);
         return true;
     }
 }
@@ -249,7 +361,7 @@ bool RunAnimationTests() {
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory);
-    const bool passed = RunLoadingTests(directory) && RunSamplingTests() && RunAnimatorTests();
+    const bool passed = RunLoadingTests(directory) && RunSamplingTests() && RunGraphParsingTests() && RunAnimatorTests();
     std::filesystem::remove_all(directory, error);
     return passed;
 }

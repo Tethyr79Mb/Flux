@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Animation/AnimationLibrary.hpp"
 #include "Flux/Core/Project.hpp"
 #include "Flux/Core/SimulationClock.hpp"
 #include "Flux/Scene/ComponentRegistry.hpp"
@@ -46,9 +47,6 @@ namespace Flux {
         public:
         // Système du jeu ou du moteur appelé à chaque pas (deltaSeconds = SimulationClock::StepSeconds).
         using StepFunction = std::function<void(Simulation& simulation, double deltaSeconds)>;
-        // Durée (s, vitesse de lecture 1) d'une animation d'un modèle ; 0 si inconnue. Donnée par qui charge les
-        // modèles (le rendu pour l'instant).
-        using AnimationDurationFunction = std::function<float(const std::filesystem::path& model, const std::string& animation)>;
 
         // Étapes d'un pas où tournent les systèmes, dans l'ordre d'ajout.
         enum class Stage {
@@ -120,7 +118,9 @@ namespace Flux {
         void SetLocalCommand(const PlayerCommand& command) { m_localCommand = command; }
         // Commande d'un autre joueur (reçue par le serveur) pour le prochain pas seulement : à redonner à chaque pas.
         void SetPlayerCommand(Entity player, const PlayerCommand& command);
-        void SetAnimationDurations(AnimationDurationFunction durations) { m_animationDurations = std::move(durations); }
+        // Squelettes et graphes d'animation du projet, relus à chaque Start ou LoadScene (fichiers modifiés entre deux
+        // parties). Le jeu y trouve le graphe d'un animateur pour poser ses paramètres (Animator::SetParameter).
+        AnimationLibrary& GetAnimations() { return m_animations; }
 
         // Projectiles en vol : ceux que le jeu y ajoute (ses armes) avancent et touchent ici, sont dessinés par le
         // moteur.
@@ -168,7 +168,7 @@ namespace Flux {
             InputActionId jump = NoInputAction;
             InputActionId interact = NoInputAction;
         } m_characterActions;
-        AnimationDurationFunction m_animationDurations;
+        AnimationLibrary m_animations;
         PlayerCommand m_localCommand;
         Entity m_localPlayer = NullEntity; // monde répliqué seulement (SetLocalPlayer)
         std::vector<std::pair<Entity, PlayerCommand>> m_commands; // des autres joueurs, pour le prochain pas
@@ -203,7 +203,7 @@ namespace Flux {
         void CollectPlayers();
         void AnimateReplicated(double deltaSeconds);
         PlayerStep* FindPlayerStep(Entity player);
-        Seats::Durations GetSeatDurations(Entity character) const;
+        Seats::Durations GetSeatDurations(Entity character);
         void RunSystems(Stage stage, double deltaSeconds);
     };
 }

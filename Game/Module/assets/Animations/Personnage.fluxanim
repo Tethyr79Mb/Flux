@@ -1,0 +1,34 @@
+{
+  "format": "flux.anim",
+  "version": 1,
+  "parameters": {
+    "speed": 0,
+    "gait": 0,
+    "airTime": 0,
+    "seat": 0
+  },
+  "start": "Repos",
+  "states": [
+    { "name": "Repos", "animation": "Repos" },
+    {
+      "name": "Marche et course",
+      "blend": "gait",
+      "points": [
+        { "animation": "Marche", "value": 1 },
+        { "animation": "Course", "value": 2, "phase": 0 }
+      ]
+    },
+    { "name": "En l'air", "animation": "Chute" },
+    { "name": "S'asseoir", "animation": "S'asseoir", "loop": false, "tag": "sitDown" },
+    { "name": "Assis", "animation": "Assis" },
+    { "name": "Se lever", "animation": "Se lever", "loop": false, "tag": "standUp" }
+  ],
+  "transitions": [
+    { "to": "S'asseoir", "when": ["seat == 1"] },
+    { "to": "Assis", "when": ["seat == 2"] },
+    { "to": "Se lever", "when": ["seat == 3"] },
+    { "to": "En l'air", "when": ["seat == 0", "airTime > 0.15"] },
+    { "to": "Repos", "when": ["seat == 0", "airTime <= 0.15", "speed < 0.1"] },
+    { "to": "Marche et course", "when": ["seat == 0", "airTime <= 0.15", "speed >= 0.1"] }
+  ]
+}

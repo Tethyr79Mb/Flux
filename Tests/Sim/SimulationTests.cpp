@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <string>
+#include <utility>
 
 using namespace Flux;
 
@@ -165,21 +166,33 @@ namespace {
         Simulation simulation;
         simulation.SetReplicated(true);
         Scene& scene = simulation.GetScene();
+        // Le graphe du personnage du jeu, sur un squelette sans courbes : seules les durées comptent.
+        AnimationLibrary& animations = simulation.GetAnimations();
+        animations.SetAssetsDirectory(FLUX_GAME_ASSETS);
+        const AnimationGraph* graph = animations.GetGraph(DefaultCharacterGraph);
+        CHECK(graph != nullptr);
+        ModelSkeleton skeleton;
+        skeleton.nodes.push_back({"hanches", -1, {}, {}, {1, 1, 1}});
+        for (const char* name : {"Repos", "Marche", "Course", "Chute"}) {
+            skeleton.animations.push_back({name, 1.0f, {}});
+        }
+        animations.SetSkeleton("marcheur.glb", std::move(skeleton));
         const Entity walker = scene.CreateEntity("Marcheur");
+        scene.Add<ModelComponent>(walker).model = "marcheur.glb";
         scene.Add<CharacterComponent>(walker);
         AnimatorComponent& animator = scene.Add<AnimatorComponent>(walker);
-        animator.idleAnimation = "Repos";
-        animator.airAnimation = "Chute";
-        animator.animation = "Marche";
+        animator.graph = std::string(DefaultCharacterGraph);
+        // État du graphe joué en dernier (celui qui prend le dessus).
+        const auto playing = [&] { return graph->states[static_cast<std::size_t>(animator.layers[animator.layerCount - 1].state)].name; };
         const double step = SimulationClock::StepSeconds;
         simulation.Step(step);
-        CHECK(animator.playing == "Repos");
+        CHECK(playing() == "Repos");
         for (int i = 0; i < 10; ++i) {
             scene.Get<TransformComponent>(walker).position.x += 2.0 * step; // 2 m/s
             simulation.Step(step);
         }
         CHECK(std::abs(scene.Get<CharacterComponent>(walker).groundSpeed - 2.0f) < 0.01f);
-        CHECK(animator.playing == "Marche");
+        CHECK(playing() == "Marche et course");
         // Saut sur place (4,5 m/s, 9,81 m/s²) : en l'air jusqu'à la retombée, haut du saut compris.
         double vertical = 4.5;
         bool airborneAtTop = false;
@@ -194,12 +207,12 @@ namespace {
             }
             simulation.Step(step);
             if (std::abs(vertical) < 0.5) {
-                airborneAtTop = animator.playing == "Chute";
+                airborneAtTop = playing() == "En l'air";
             }
         }
         CHECK(airborneAtTop);
         simulation.Step(step);
-        CHECK(animator.playing == "Repos");
+        CHECK(playing() == "Repos");
         return true;
     }
 

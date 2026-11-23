@@ -2,21 +2,27 @@
 
 #include "Flux/SimExport.hpp"
 
+#include <string_view>
+
 namespace Flux {
+    class AnimationLibrary;
     class Scene;
+    struct AnimationGraph;
+    struct AnimatorComponent;
 
-    // Lecture des animations des modèles : AnimatorComponent. La pose elle-même est calculée au rendu, d'après
-    // l'état laissé ici (animation, instant, fondu).
+    // Lecture des animations des modèles : AnimatorComponent et son graphe. La simulation choisit les animations et
+    // leurs parts (aussi sur le serveur) ; la pose elle-même est calculée au rendu, d'après AnimatorComponent::clips.
     namespace Animator {
-        // Durée du fondu d'une animation à l'autre, en secondes.
-        inline constexpr float FadeSeconds = 0.25f;
-        // Vitesse sous laquelle un personnage est considéré immobile, m/s.
-        inline constexpr float IdleSpeed = 0.1f;
-        // Temps en l'air avant de jouer l'animation « en l'air » : une marche d'escalier ou une bosse ne la
-        // déclenche pas, en secondes.
-        inline constexpr float AirDelay = 0.15f;
+        // Pose les paramètres des personnages (AnimationParameters), suit les transitions des graphes, avance les
+        // lectures et écrit les animations pondérées de chaque AnimatorComponent.
+        FLUX_SIM_API void Update(Scene& scene, AnimationLibrary& library, double deltaSeconds);
 
-        // Choisit l'animation de chaque AnimatorComponent (celle des pas d'un personnage) et avance sa lecture.
-        FLUX_SIM_API void Update(Scene& scene, double deltaSeconds);
+        // Valeur d'un paramètre déclaré par le graphe de l'animateur, pour les pas suivants ; faux s'il n'y est pas.
+        FLUX_SIM_API bool SetParameter(AnimatorComponent& animator, const AnimationGraph& graph, std::string_view name, float value);
+
+        // Durée de l'état portant cette étiquette dans le graphe de l'animateur (sa première animation, à sa vitesse
+        // et à celle de l'animateur), secondes ; 0 sans graphe, sans cet état ou sans cette animation.
+        FLUX_SIM_API float GetTagDuration(AnimationLibrary& library, const AnimatorComponent& animator, std::string_view model,
+                                          std::string_view tag);
     }
 }

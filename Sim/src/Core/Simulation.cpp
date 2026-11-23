@@ -44,6 +44,7 @@ namespace Flux {
 
     void Simulation::SetProject(Project project) {
         m_prefabReader = SceneSerializer::ReadPrefabsFrom(project.assetsDirectory);
+        m_animations.SetAssetsDirectory(project.assetsDirectory);
         m_project = std::move(project);
     }
 
@@ -57,6 +58,7 @@ namespace Flux {
 
     void Simulation::SceneReplaced() {
         m_physics.reset(); // les corps de l'ancienne scène
+        m_animations.Clear();
         m_clock.Reset();
         m_projectiles.clear();
         m_projectileHits.clear();
@@ -75,6 +77,7 @@ namespace Flux {
         }
         m_started = true;
         m_clock.Reset();
+        m_animations.Clear();
         StartPhysics();
     }
 
@@ -157,18 +160,15 @@ namespace Flux {
         return nullptr;
     }
 
-    Seats::Durations Simulation::GetSeatDurations(Entity character) const {
-        // Durées des animations « s'asseoir » et « se lever » de son modèle, à la vitesse de lecture.
+    Seats::Durations Simulation::GetSeatDurations(Entity character) {
+        // Durées des états « s'asseoir » et « se lever » de son graphe, à la vitesse de lecture.
         const auto* animator = m_scene.TryGet<AnimatorComponent>(character);
         const auto* model = m_scene.TryGet<ModelComponent>(character);
-        if (!m_animationDurations || !m_project || !animator || !model || model->model.empty() || animator->speed <= 0.0f) {
+        if (!animator || !model) {
             return Seats::Durations{};
         }
-        const std::filesystem::path path = m_project->assetsDirectory / Platform::PathFromUtf8(model->model);
-        const auto duration = [&](const std::string& name) {
-            return name.empty() ? 0.0f : m_animationDurations(path, name) / animator->speed;
-        };
-        return Seats::Durations{duration(animator->sitDownAnimation), duration(animator->standUpAnimation)};
+        return Seats::Durations{Animator::GetTagDuration(m_animations, *animator, model->model, SitDownTag),
+                                Animator::GetTagDuration(m_animations, *animator, model->model, StandUpTag)};
     }
 
     void Simulation::Step(double deltaSeconds) {
@@ -250,7 +250,7 @@ namespace Flux {
             },
             &m_projectileHits);
         RunSystems(Stage::AfterPhysics, deltaSeconds); // dégâts (GetProjectileHits), armes du joueur et des ennemis
-        Animator::Update(m_scene, deltaSeconds); // après la physique : les pas du personnage de ce pas
+        Animator::Update(m_scene, m_animations, deltaSeconds); // après la physique : les pas du personnage de ce pas
         // Les commandes des autres joueurs ne valent que pour ce pas (celle de cet écran reste : vol libre, caméra).
         m_playerSteps.clear();
         m_commands.clear();
@@ -284,7 +284,7 @@ namespace Flux {
             character.airTime = motion.inAir ? character.airTime + static_cast<float>(deltaSeconds) : 0.0f;
         }
         std::ranges::sort(m_characterMotions, {}, &CharacterMotion::entity);
-        Animator::Update(m_scene, deltaSeconds);
+        Animator::Update(m_scene, m_animations, deltaSeconds);
     }
 
     bool Simulation::ConsumeInteraction(Entity player) {
