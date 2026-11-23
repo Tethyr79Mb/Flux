@@ -427,6 +427,31 @@ namespace {
         CHECK(moved.size() == 2 && moved[0].channels.size() == 2 && moved[0].duration == 2.0f);
         CHECK(moved[0].channels[0].node == 2 && moved[0].channels[1].node == 1);
 
+        // Autre personnage (Y Bot), dans une autre unité : hanches à 2 au lieu de 1, torse plus long et tourné au repos.
+        {
+            ModelSkeleton tall;
+            tall.nodes.push_back({"mixamorig:Hips", -1, {0, 2, 0}, {}, {1, 1, 1}});
+            const Math::Quaternionf rest = Math::Quaternionf::FromAxisAngle({1, 0, 0}, 0.3f);
+            tall.nodes.push_back({"mixamorig:Spine", 0, {0, 0.6f, 0}, rest, {1, 1, 1}});
+            ModelSkeleton small;
+            small.nodes.push_back({"Hips", -1, {0, 1, 0}, {}, {1, 1, 1}});
+            small.nodes.push_back({"Spine", 0, {0, 0.3f, 0}, {}, {1, 1, 1}});
+            const Math::Quaternionf bend = Math::Quaternionf::FromAxisAngle({0, 0, 1}, 0.5f);
+            const Math::Quaternionf posed = rest * bend; // le torse plié de bend par rapport à son repos
+            ModelAnimation bow{"Saluer", 1.0f, {}};
+            bow.channels.push_back({0, AnimationPath::Translation, AnimationInterpolation::Linear, {0}, {0.4f, 2.2f, 0}});
+            bow.channels.push_back({1, AnimationPath::Translation, AnimationInterpolation::Linear, {0}, {0, 0.6f, 0}});
+            bow.channels.push_back({1, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {posed.x, posed.y, posed.z, posed.w}});
+            tall.animations.push_back(bow);
+            const std::vector<ModelAnimation> fitted = RetargetAnimations(tall, small);
+            CHECK(fitted.size() == 1 && fitted[0].channels.size() == 2); // le torse garde sa longueur
+            const std::vector<float>& hips = fitted[0].channels[0].values;
+            CHECK(fitted[0].channels[0].node == 0 && Near({hips[0], hips[1], hips[2]}, {0.2f, 1.1f, 0}));
+            const std::vector<float>& spin = fitted[0].channels[1].values;
+            CHECK(fitted[0].channels[1].path == AnimationPath::Rotation
+                  && std::abs(std::abs(Math::Dot(Math::Quaternionf{spin[0], spin[1], spin[2], spin[3]}, bend)) - 1.0f) < 1.0e-5f);
+        }
+
         AnimationLibrary library;
         library.SetSkeleton("soldat.glb", model);
         library.SetSkeleton("Animations/marche.glb", file);

@@ -27,8 +27,10 @@ namespace Flux {
     };
 
     // Recopie les animations de source sur les nœuds de target de même nom (« mixamorig:Hips » vaut « Hips ») ; les
-    // courbes d'un nœud absent de target sont laissées. Les valeurs ne sont pas converties : même squelette attendu
-    // (mêmes longueurs d'os et même échelle de l'armature), sinon les translations animées (hanches) seront fausses.
+    // courbes d'un nœud absent de target sont laissées. Un autre personnage (Y Bot de Mixamo) convient : les rotations
+    // sont prises par rapport à la pose de repos de chaque os ; les os gardent leurs longueurs (translations du
+    // fichier laissées, sauf celles d'un os de même longueur dans les deux) ; le déplacement des hanches (l'os le plus
+    // haut qui se déplace) est mis à l'échelle de target (rapport de leurs hauteurs au repos). Échelles laissées.
     FLUX_SIM_API std::vector<ModelAnimation> RetargetAnimations(const ModelSkeleton& source, const ModelSkeleton& target);
 
     // Squelettes (os et animations des modèles) et graphes d'animation du projet, lus une fois à la première demande

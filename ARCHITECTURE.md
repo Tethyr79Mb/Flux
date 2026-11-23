@@ -489,7 +489,8 @@ planète donne directement le sien comme indice d'instance.
   d'un personnage (`AnimationParameters` : vitesse, allure, temps en l'air, siège), le jeu les siens
   (`Animator::SetParameter`). `"files"` ajoute aux animations du modèle celles d'autres fichiers du même squelette
   (une animation Mixamo par fichier, qui prend le nom de son fichier) : `RetargetAnimations` recâble leurs courbes sur les os du modèle par nom
-  (préfixe `mixamorig:` ignoré) ; un modèle et un graphe donnent un `AnimationSet`, dont les indices sont ceux des
+  (préfixe `mixamorig:` ignoré), rotations prises par rapport au repos de chaque os, longueurs d'os gardées,
+  hanches mises à l'échelle : une animation faite sur un autre personnage convient ; un modèle et un graphe donnent un `AnimationSet`, dont les indices sont ceux des
   clips.
 - Simulation (FluxSim, aussi le serveur) : `AnimationLibrary` lit squelettes et graphes à la première demande
   (`Simulation::GetAnimations`, vidée à chaque `Start`) ; `Animator::Update` tient pour chaque couche une pile de 4

@@ -42,21 +42,68 @@ namespace Flux {
     }
 
     std::vector<ModelAnimation> RetargetAnimations(const ModelSkeleton& source, const ModelSkeleton& target) {
-        // Nœud de target pour chaque nœud de source, par nom.
+        // Nœud de target pour chaque nœud de source, par nom, et profondeur de chaque nœud de source.
         std::vector<int> nodes(source.nodes.size(), -1);
+        std::vector<int> depths(source.nodes.size(), 0);
         for (std::size_t i = 0; i < source.nodes.size(); ++i) {
             nodes[i] = FindNode(target, source.nodes[i].name);
+            const int parent = source.nodes[i].parent;
+            depths[i] = parent >= 0 ? depths[static_cast<std::size_t>(parent)] + 1 : 0; // parents avant enfants
         }
         std::vector<ModelAnimation> animations;
         animations.reserve(source.animations.size());
         for (const ModelAnimation& animation : source.animations) {
+            // Les hanches : le nœud recâblé le plus haut dont la place est animée.
+            int hips = -1;
+            for (const AnimationChannel& channel : animation.channels) {
+                if (channel.path == AnimationPath::Translation && channel.node < nodes.size() && nodes[channel.node] >= 0
+                    && (hips < 0 || depths[channel.node] < depths[static_cast<std::size_t>(hips)])) {
+                    hips = static_cast<int>(channel.node);
+                }
+            }
             ModelAnimation& copy = animations.emplace_back();
             copy.name = animation.name;
             copy.duration = animation.duration;
             for (const AnimationChannel& channel : animation.channels) {
-                if (channel.node < nodes.size() && nodes[channel.node] >= 0) {
+                if (channel.node >= nodes.size() || nodes[channel.node] < 0 || channel.path == AnimationPath::Scale) {
+                    continue;
+                }
+                const SkeletonNode& from = source.nodes[channel.node];
+                const SkeletonNode& to = target.nodes[static_cast<std::size_t>(nodes[channel.node])];
+                const bool cubic = channel.interpolation == AnimationInterpolation::CubicSpline;
+                if (channel.path == AnimationPath::Rotation) {
+                    // Même écart à la pose de repos : repos de target × (repos de source)⁻¹ × rotation. Linéaire en
+                    // les quatre nombres : vaut aussi pour les tangentes d'une spline.
+                    const Math::Quaternionf offset = to.rotation * from.rotation.Conjugate();
                     AnimationChannel& moved = copy.channels.emplace_back(channel);
                     moved.node = static_cast<std::uint32_t>(nodes[channel.node]);
+                    for (std::size_t v = 0; v + 3 < moved.values.size(); v += 4) {
+                        const Math::Quaternionf q = offset * Math::Quaternionf{moved.values[v], moved.values[v + 1], moved.values[v + 2], moved.values[v + 3]};
+                        moved.values[v] = q.x;
+                        moved.values[v + 1] = q.y;
+                        moved.values[v + 2] = q.z;
+                        moved.values[v + 3] = q.w;
+                    }
+                    continue;
+                }
+                const float fromLength = Math::Length(from.translation);
+                const float toLength = Math::Length(to.translation);
+                const bool sameBone = Math::Length(from.translation - to.translation) <= 0.01f * std::max(toLength, 1.0e-3f);
+                if (static_cast<int>(channel.node) != hips && !sameBone) {
+                    continue; // l'os garde sa longueur
+                }
+                // Hanches : écart au repos mis à l'échelle de target (même rapport pour un autre personnage, une autre
+                // unité ou une armature à l'échelle 0,01) ; un os identique : tel quel.
+                const float ratio = sameBone || fromLength < 1.0e-6f ? 1.0f : toLength / fromLength;
+                AnimationChannel& moved = copy.channels.emplace_back(channel);
+                moved.node = static_cast<std::uint32_t>(nodes[channel.node]);
+                for (std::size_t v = 0; v + 2 < moved.values.size(); v += 3) {
+                    const bool tangent = cubic && (v / 3) % 3 != 1; // spline : tangente d'entrée, valeur, tangente de sortie
+                    const Math::Vector3f value{moved.values[v], moved.values[v + 1], moved.values[v + 2]};
+                    const Math::Vector3f scaled = tangent ? value * ratio : to.translation + (value - from.translation) * ratio;
+                    moved.values[v] = scaled.x;
+                    moved.values[v + 1] = scaled.y;
+                    moved.values[v + 2] = scaled.z;
                 }
             }
         }
