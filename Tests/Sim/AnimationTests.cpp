@@ -526,6 +526,40 @@ namespace {
             CHECK(same(hipsModel, yaw) && same(hipsModel * poses[2].rotation, yaw * bend));
         }
 
+        // Même squelette, repos différents : bras en T dans le clip, en A (baissé de 24°) dans le personnage. Le bras
+        // prend la direction du clip, sans l'écart des deux repos.
+        {
+            const Math::Quaternionf lowered = Math::Quaternionf::FromAxisAngle({0, 0, 1}, -0.42f);
+            const auto arm = [](const Math::Quaternionf& rest) {
+                ModelSkeleton skeleton;
+                skeleton.nodes.push_back({"Hips", -1, {0, 1, 0}, {}, {1, 1, 1}});
+                skeleton.nodes.push_back({"RightArm", 0, {0, 0.5f, 0}, rest, {1, 1, 1}});
+                skeleton.nodes.push_back({"RightForeArm", 1, {0.3f, 0, 0}, {}, {1, 1, 1}});
+                skeleton.nodes.push_back({"RightHand", 2, {0.25f, 0, 0}, {}, {1, 1, 1}});
+                return skeleton;
+            };
+            ModelSkeleton tPose = arm({});
+            const ModelSkeleton aPose = arm(lowered);
+            const Math::Quaternionf raise = Math::Quaternionf::FromAxisAngle({0, 1, 0}, -1.2f); // le bras vers l'avant
+            const Math::Quaternionf bent = Math::Quaternionf::FromAxisAngle({0, 1, 0}, 0.4f);
+            ModelAnimation aim{"Viser", 1.0f, {}};
+            aim.channels.push_back({0, AnimationPath::Translation, AnimationInterpolation::Linear, {0}, {0, 1, 0}});
+            aim.channels.push_back({1, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {raise.x, raise.y, raise.z, raise.w}});
+            aim.channels.push_back({2, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {bent.x, bent.y, bent.z, bent.w}});
+            tPose.animations.push_back(aim);
+            const std::vector<ModelAnimation> aimed = RetargetAnimations(tPose, aPose);
+            CHECK(aimed.size() == 1);
+            PoseEvaluator clipPose;
+            clipPose.Evaluate(tPose, AnimationSample{&tPose.animations[0], 0.0, false});
+            PoseEvaluator aimedPose;
+            aimedPose.Evaluate(aPose, AnimationSample{&aimed[0], 0.0, false});
+            for (std::size_t n : {2u, 3u}) {
+                const auto a = clipPose.GetNodeMatrices()[n].columns[3];
+                const auto b = aimedPose.GetNodeMatrices()[n].columns[3];
+                CHECK(Near(Vector3f{a[0], a[1], a[2]}, {b[0], b[1], b[2]}));
+            }
+        }
+
         AnimationLibrary library;
         library.SetSkeleton("soldat.glb", model);
         library.SetSkeleton("Animations/marche.glb", file);

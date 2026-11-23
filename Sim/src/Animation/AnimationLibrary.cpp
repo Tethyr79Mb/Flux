@@ -113,6 +113,24 @@ namespace Flux {
         globals(source, hips, sourceAbove, [&](std::size_t i) { return source.nodes[i].rotation; }, sourceRest);
         globals(target, targetHips, targetAbove, [&](std::size_t i) { return target.nodes[i].rotation; }, targetRest);
 
+        // Os aux mêmes axes dans les deux fichiers : son premier enfant recâblé est placé dans la même direction (le
+        // même squelette, Mixamo vers Mixamo, même si la pose de repos diffère : en T dans les clips, en A dans le
+        // personnage). Il prend alors la rotation du fichier telle quelle dans le repère du modèle : comparé au
+        // repos, l'écart entre les deux repos s'ajouterait le long du bras. Sinon (axes propres des os différents,
+        // os sans enfant), il tourne comme dans le fichier par rapport à son repos.
+        std::vector<std::uint8_t> sameAxes(target.nodes.size(), 0);
+        for (std::size_t c = 0; c < target.nodes.size(); ++c) {
+            const int t = target.nodes[c].parent;
+            const int sc = sources[c];
+            if (t < 0 || sameAxes[static_cast<std::size_t>(t)] || sc < 0 || source.nodes[static_cast<std::size_t>(sc)].parent != sources[static_cast<std::size_t>(t)]) {
+                continue;
+            }
+            const Math::Vector3f to = target.nodes[c].translation;
+            const Math::Vector3f from = source.nodes[static_cast<std::size_t>(sc)].translation;
+            const float lengths = Math::Length(to) * Math::Length(from);
+            sameAxes[static_cast<std::size_t>(t)] = lengths > 1.0e-12f && Math::Dot(to, from) > 0.999f * lengths ? 1 : 2; // 2 : premier enfant différent
+        }
+
         const SkeletonNode& fromHips = source.nodes[static_cast<std::size_t>(hips)];
         const SkeletonNode& toHips = target.nodes[static_cast<std::size_t>(targetHips)];
         const float fromHeight = Math::Length(fromHips.translation);
@@ -172,7 +190,7 @@ namespace Flux {
                         continue;
                     }
                     const auto s = static_cast<std::size_t>(sources[t]);
-                    targetPose[t] = Math::Normalize(sourcePose[s] * sourceRest[s].Conjugate() * targetRest[t]);
+                    targetPose[t] = sameAxes[t] == 1 ? sourcePose[s] : Math::Normalize(sourcePose[s] * sourceRest[s].Conjugate() * targetRest[t]);
                     const Math::Quaternionf rotation = Math::Normalize(above.Conjugate() * targetPose[t]);
                     AnimationChannel& channel = copy.channels[static_cast<std::size_t>(channelOf[t])];
                     channel.times.push_back(time);
