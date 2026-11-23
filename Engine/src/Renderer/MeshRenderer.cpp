@@ -1569,8 +1569,10 @@ namespace Flux {
                         models = {};
                     }
                 }
-                // Imposteur, tiré du modèle détaillé : capturé à sa première demande.
-                models.impostor = models.near ? m_impostors->Find(*models.near) : 0u;
+                // Imposteur, tiré du modèle détaillé : capturé à sa première demande. Une plante n'en a pas (computeCull
+                // ne la garde pas au loin).
+                models.impostor = models.near && !species.plant ? m_impostors->Find(*models.near) : 0u;
+                models.litter = species.litter.empty() ? nullptr : m_models->Find(assetsDirectory, species.litter);
                 m_treeModels.push_back(models);
             }
         }

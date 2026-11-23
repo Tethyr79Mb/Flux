@@ -70,6 +70,8 @@ namespace Flux {
         };
         PlanetTileStats GetPlanetTileStats() const;
         Planetology::VegetationRenderer::Stats GetVegetationStats() const { return m_vegetation->GetStats(); }
+        // Arbres de l'image (litière : LitterRenderer).
+        const Planetology::VegetationRenderer& GetVegetation() const { return *m_vegetation; }
         // Réacteurs de l'image préparée (ThrusterRenderer), leur lumière déjà comptée parmi celles de la scène.
         std::span<const ThrusterDraw> GetThrusters() const { return m_thrusters; }
         // Voir Renderer::SetThrusterPreview.

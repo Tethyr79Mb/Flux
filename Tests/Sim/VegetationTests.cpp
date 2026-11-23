@@ -53,11 +53,14 @@ bool RunVegetationTests() {
     const VegetationComponent vegetation;
     const Planetology::VegetationSet& set = library.Get(assets, vegetation);
     CHECK(set.biomes.size() == 6);
-    CHECK(set.species.size() == 7); // épicéa, sapin, pin (deux variantes chacun), feuillu
+    CHECK(set.species.size() == 9); // épicéa, sapin, pin, fougère (deux variantes chacun), feuillu
     for (const Planetology::VegetationSet::Species& tree : set.species) {
         for (const std::string& model : {tree.models.model, tree.models.lodModel, tree.models.farModel}) {
             CHECK(std::filesystem::exists(assets / Platform::PathFromUtf8(model)));
         }
+        // Une litière pour chaque arbre, aucune pour la fougère (une plante).
+        CHECK(tree.plant == tree.litter.empty());
+        CHECK(tree.litter.empty() || std::filesystem::exists(assets / Platform::PathFromUtf8(tree.litter)));
     }
     for (std::size_t b = 0; b < set.biomes.size(); ++b) {
         CHECK(set.biomeShares[b][3] == 1.0f);
@@ -106,9 +109,14 @@ bool RunVegetationTests() {
     tree.variants = {{"a.glb", "a1.glb", "a2.glb"}, {"b.glb", "b.glb", "b.glb"}};
     tree.maxSlope = 42.5f;
     tree.canopyColor = {0.023f, 0.051f, 0.013f, 1.0f};
+    tree.litter = "Modèles/litière.glb";
+    tree.plant = true;
     auto rereadTree = Planetology::ParseTreeSpecies(Planetology::WriteTreeSpecies(tree));
     CHECK(rereadTree && rereadTree->variants.size() == 2 && rereadTree->variants[0].farModel == "a2.glb");
     CHECK(rereadTree->maxSlope == 42.5f && rereadTree->canopyColor.g == 0.051f);
+    CHECK(rereadTree->litter == tree.litter && rereadTree->plant);
+    CHECK(!Planetology::ParseTreeSpecies(R"({"variants": [{"model": "a.glb"}]})")->plant);
+    CHECK(!Planetology::ParseTreeSpecies(R"({"variants": [{"model": "a.glb"}], "plant": 1})"));
     CHECK(Planetology::WriteTreeSpecies(*rereadTree) == Planetology::WriteTreeSpecies(tree));
 
     // Aperçu de l'éditeur : lu à la place du fichier dès l'appel suivant, puis le fichier redevient la référence.
@@ -136,7 +144,7 @@ bool RunVegetationTests() {
         planet.snowLevel = 1000.0f;
         const Planetology::Terrain world(planet);
         Planetology::VegetationSet forest;
-        forest.species = {{{"a.glb", "a.glb", "a.glb"}, 1.0f, 1.0f, 90.0f, 0.0f, 0.3f, 10.0f, 12.0f}};
+        forest.species = {{{"a.glb", "a.glb", "a.glb"}, 1.0f, 1.0f, 90.0f, 0.0f, 0.3f, 10.0f, 12.0f, {}, false}};
         forest.biomes.push_back({{1.0f, 1.0f, 1.0f, 1.0f}, {-10.0f, 10.0f, -1000.0f, 1000.0f}, {-10.0f, 10.0f, 1.0f, 1.0f},
                                  {0.0f, 0.0f, 0.0f, 200.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {-1.0f, 2.0f, 0.3f, 0.25f}});
         forest.biomeSpecies.push_back({1u << 8, 1u << 8, 1u << 8, 1u << 8});
@@ -173,6 +181,20 @@ bool RunVegetationTests() {
         std::size_t bareTrees, bareYoung;
         CHECK(count(bare, bareTrees, bareYoung));
         CHECK(bareTrees == trees && bareYoung == 0);
+        // Plante du sous-bois : sa taille à elle (pas understoryScale), les arbres n'en changent pas.
+        Planetology::VegetationSet plants = forest;
+        plants.species[0].plant = true;
+        std::vector<Planetology::SownTree> sown;
+        Planetology::SowPlain(world, settings, plants, plain, sown);
+        std::size_t plantCount = 0;
+        for (const Planetology::SownTree& placed : sown) {
+            CHECK(placed.scale == 1.0f);
+            plantCount += placed.understory ? 1 : 0;
+            // Normale du sol : unitaire, du côté du haut.
+            CHECK(std::abs(Math::Length(placed.ground) - 1.0f) < 1.0e-4f
+                  && Math::Dot(Math::Vector3d(placed.ground), Math::Normalize(placed.position)) > 0.0);
+        }
+        CHECK(plantCount == young);
     }
     const std::uint32_t octaves = terrain.GetOctaves(terrain.GetMaxLevel());
     int mountains = 0;

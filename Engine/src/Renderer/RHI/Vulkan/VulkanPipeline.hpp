@@ -51,6 +51,7 @@ namespace Flux::Vk {
         // Couleur ajoutée à celle de derrière (flammes) ; l'alpha de la cible ne change pas.
         bool additiveBlend = false;
         bool premultipliedBlend = false; // couleur déjà multipliée par son alpha (transparents de la scène)
+        bool decalBlend = false;         // comme alphaBlend, l'alpha de la cible gardé (décalques du G-buffer)
         // Décalage de profondeur (cartes d'ombres) ; 0 et 0 : aucun.
         float depthBiasConstant = 0.0f;
         float depthBiasSlope = 0.0f;

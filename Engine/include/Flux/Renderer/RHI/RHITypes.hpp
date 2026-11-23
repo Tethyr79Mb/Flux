@@ -137,6 +137,9 @@ namespace Flux::RHI {
         // Couleur déjà multipliée par son alpha, ajoutée à ce qui est derrière assombri de cet alpha : une surface peut
         // ajouter de la lumière sans rien cacher (reflets d'un verre presque transparent).
         Premultiplied,
+        // Comme Alpha, mais l'alpha de la cible reste tel quel : un décalque peint la couleur du G-buffer sans toucher
+        // à la sorte de matériau qu'il y range (litière au pied des arbres).
+        Decal,
     };
 
     // Ce qu'une passe fait d'une texture : le graphe de rendu le déclare (RenderGraph), CommandList::UseTextures en

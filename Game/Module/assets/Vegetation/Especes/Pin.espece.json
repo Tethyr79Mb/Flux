@@ -18,5 +18,6 @@
   "trunkRadius": 0.26,
   "trunkHeight": 19,
   "spacing": 13,
-  "canopyColor": [0.044, 0.05, 0.013]
+  "canopyColor": [0.044, 0.05, 0.013],
+  "litter": "Modeles/Coniferes/Litiere-Pin.glb"
 }

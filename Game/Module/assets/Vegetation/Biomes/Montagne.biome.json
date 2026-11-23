@@ -8,10 +8,11 @@
     {"species": "Vegetation/Especes/Epicea.espece.json", "share": 60},
     {"species": "Vegetation/Especes/Sapin.espece.json", "share": 40}
   ],
-  "understoryDensity": 0.05,
+  "understoryDensity": 0.25,
   "understoryScale": 0.2,
   "understory": [
-    {"species": "Vegetation/Especes/Epicea.espece.json", "share": 60},
-    {"species": "Vegetation/Especes/Sapin.espece.json", "share": 40}
+    {"species": "Vegetation/Especes/Epicea.espece.json", "share": 12},
+    {"species": "Vegetation/Especes/Sapin.espece.json", "share": 8},
+    {"species": "Vegetation/Especes/Fougere.espece.json", "share": 80}
   ]
 }

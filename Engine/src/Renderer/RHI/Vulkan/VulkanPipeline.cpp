@@ -200,6 +200,14 @@ namespace Flux::Vk {
             blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
             blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
             blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        } else if (desc.decalBlend) {
+            blendAttachment.blendEnable = VK_TRUE;
+            blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+            blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+            blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
         } else if (desc.additiveBlend) {
             blendAttachment.blendEnable = VK_TRUE;
             blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;

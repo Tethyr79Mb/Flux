@@ -18,5 +18,6 @@
   "trunkRadius": 0.4,
   "trunkHeight": 25,
   "spacing": 15,
-  "canopyColor": [0.023, 0.051, 0.013]
+  "canopyColor": [0.023, 0.051, 0.013],
+  "litter": "Modeles/Coniferes/Litiere-Epicea.glb"
 }

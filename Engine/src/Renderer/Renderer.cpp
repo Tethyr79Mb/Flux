@@ -9,6 +9,7 @@
 #include "Renderer/ExposureRenderer.hpp"
 #include "Renderer/AmbientOcclusionRenderer.hpp"
 #include "Renderer/LightingRenderer.hpp"
+#include "Renderer/LitterRenderer.hpp"
 #include "Renderer/MeshRenderer.hpp"
 #include "Renderer/OverlayRenderer.hpp"
 #include "Planetology/CloudRenderer.hpp"
@@ -118,6 +119,7 @@ namespace Flux {
         std::unique_ptr<PostRenderer> post;
         std::unique_ptr<Planetology::CloudRenderer> clouds;
         std::unique_ptr<LightingRenderer> lighting;    // modèles opaques, après la passe « G-buffer »
+        std::unique_ptr<LitterRenderer> litter;        // litière au pied des arbres, sur le G-buffer
         std::unique_ptr<RayShadowRenderer> rayShadows; // nul sans ray tracing
         std::unique_ptr<AmbientOcclusionRenderer> ambientOcclusion; // GTAO, entre le G-buffer et l'éclairage
         // FSR : créé pour la taille de la vue quand un mode FSR est choisi, libéré en Natif (sa mémoire vidéo).
@@ -251,6 +253,8 @@ namespace Flux {
                             .color = graph.GetTexture(targets.sceneColor),
                             .sun = rayShadows ? graph.GetTexture(targets.sceneSun) : nullptr,
                             .ambientOcclusion = graph.GetTexture(targets.occlusion)});
+            litter->Bind({.depth = graph.GetTexture(targets.sceneDepth), .normals = graph.GetTexture(targets.gbufferNormals),
+                          .surface = graph.GetTexture(targets.gbufferSurface)});
             ambientOcclusion->Bind({.depth = graph.GetTexture(targets.sceneDepth), .base = graph.GetTexture(targets.gbufferBase),
                                     .normals = graph.GetTexture(targets.gbufferNormals),
                                     .raw = graph.GetTexture(targets.occlusionRaw), .filtered = graph.GetTexture(targets.occlusion)});
@@ -819,6 +823,24 @@ namespace Flux {
                 .Step("arbres", [this](RHI::CommandList& commands) { meshes->DrawVegetation(commands, frame.index); })
                 .Step("herbe", [this](RHI::CommandList& commands) { meshes->DrawGrass(commands, frame.index); })
                 .Step("sol", [this](RHI::CommandList& commands) { meshes->DrawGround(commands, frame.index); });
+            // Litière au pied des arbres de près (LitterRenderer) : la couleur de base du sol peinte, avant que l'occlusion
+            // et l'éclairage la lisent.
+            graph.AddPass("litière")
+                .When([this] { return sceneVisible && !meshes->GetVegetation().GetLitter().empty(); })
+                .Reads(cpu)
+                .Reads(culled)
+                .Reads(sceneDepth)
+                .Reads(gbufferNormals)
+                .Reads(gbufferSurface)
+                .Writes(gbufferBase)
+                .Begin([this](RHI::CommandList& commands) {
+                    commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.gbufferBase), .loadColor = true});
+                    commands.SetViewport({0.0f, 0.0f, static_cast<float>(frame.render.width), static_cast<float>(frame.render.height)});
+                    commands.SetScissor({0, 0, frame.render.width, frame.render.height});
+                })
+                .Step("litière", [this](RHI::CommandList& commands) {
+                    litter->Draw(commands, frame.index, meshes->GetRayShadowView().forward[3]);
+                });
             // Occlusion ambiante des pixels du G-buffer (AmbientOcclusionRenderer), lue par la passe « éclairage ».
             const auto occlusionActive = [this] { return sceneVisible && ambientOcclusion->IsActive(); };
             graph.AddPass("occlusion ambiante")
@@ -1189,6 +1211,11 @@ namespace Flux {
             return std::unexpected(lighting.error());
         }
         impl->lighting = std::move(*lighting);
+        auto litter = LitterRenderer::Create(*impl->device, *impl->meshes);
+        if (!litter) {
+            return std::unexpected(litter.error());
+        }
+        impl->litter = std::move(*litter);
         auto ambientOcclusion = AmbientOcclusionRenderer::Create(*impl->device);
         if (!ambientOcclusion) {
             return std::unexpected(ambientOcclusion.error());

@@ -116,7 +116,8 @@ Le semis des arbres a lui aussi deux exemplaires : `SowPlace` et `SowUnderstory`
 `BiomeFit` de `PlanetClimate.slang`) pour l'image, et `Planetology::SowPlain` (`TreeSowing.cpp`) pour la collision des
 troncs. Biome et espèce y sont tirés par bosquets (`GroveValue` : une valeur par cellule, aux bords ondulés), pas
 arbre par arbre. Le sous-bois a sa propre grille (une place par case de 3 à 6 m), plus clairsemée hors des forêts,
-et laisse libre le pied de chaque arbre possible. Leur hasard est fait sur des entiers (`TreeHash`, `ClimateHash`), exact partout : un hasard en float
+et laisse libre le pied de chaque arbre possible. Les deux gardent la normale du sol de chaque arbre (celle du test de pente) : le
+bas du modèle (racines) y est plaqué, et la litière (`Litter.slang`) peinte autour du pied suit le sol. Leur hasard est fait sur des entiers (`TreeHash`, `ClimateHash`), exact partout : un hasard en float
 (`PlanetHash`, gardé pour l'aspect du sol et des nuages) change d'un pilote à l'autre. `VegetationGpuTests` vérifie
 qu'ils donnent les mêmes arbres (0,5 % d'écart au plus, au ras d'un seuil, le relief du GPU étant en float).
 

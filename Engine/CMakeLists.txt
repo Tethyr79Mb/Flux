@@ -69,6 +69,8 @@ flux_add_shaders(FluxShaders
         shaders/Grid.slang
         shaders/Lighting.slang
         shaders/LightingRays.slang
+        shaders/Litter.slang
+        shaders/LitterRays.slang
         shaders/Mesh.slang
         shaders/MeshRays.slang
         shaders/ModelMesh.slang

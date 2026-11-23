@@ -213,7 +213,8 @@ namespace Flux::Planetology {
             for (std::size_t s = 0; s < std::min<std::size_t>(biomes.species.size(), MaxSpecies); ++s) {
                 const VegetationSet::Species& species = biomes.species[s];
                 m_sowVegetation.species[s] = {species.minScale, species.maxScale,
-                                              std::cos(species.maxSlope * (std::numbers::pi_v<float> / 180.0f)), 0.0f};
+                                              std::cos(species.maxSlope * (std::numbers::pi_v<float> / 180.0f)),
+                                              species.plant ? 1.0f : 0.0f};
             }
             const TreeBlocks blocks = GetTreeBlocks(terrain, biomes);
             m_sowVegetation.counts = {static_cast<std::uint32_t>(count), blocks.used, std::bit_cast<std::uint32_t>(blocks.biomeGrove), 0};
@@ -231,8 +232,10 @@ namespace Flux::Planetology {
                 }
             }
             m_tints = {};
+            m_plants = 0;
             for (std::size_t s = 0; s < std::min<std::size_t>(biomes.species.size(), MaxSpecies); ++s) {
                 m_tints[s] = biomes.species[s].tint;
+                m_plants |= biomes.species[s].plant ? 1u << s : 0u;
             }
         }
         m_entity = entity;
@@ -309,7 +312,10 @@ namespace Flux::Planetology {
         job.cell = {plain.key.face, plain.key.level, plain.key.x, plain.key.y};
         job.options[0] = slot;
         m_jobs.push_back(job);
-        return m_stored.emplace(plain.key.Pack(), StoredPlain{slot, m_frame, m_now}).first;
+        // Comme site.local dans shaders/PlanetTile.slang (direction du centre x rayon).
+        const std::array<float, 3> local{m_inputs.center[0] * m_inputs.axisN[3], m_inputs.center[1] * m_inputs.axisN[3],
+                                         m_inputs.center[2] * m_inputs.axisN[3]};
+        return m_stored.emplace(plain.key.Pack(), StoredPlain{slot, m_frame, m_now, local}).first;
     }
 
     void VegetationRenderer::EndFrame(std::uint32_t frameIndex, const View& view,
@@ -321,6 +327,7 @@ namespace Flux::Planetology {
         for (auto& list : m_lists) {
             list.clear();
         }
+        m_litter.clear();
         m_stats.plains = 0;
         m_stats.pending = 0;
         m_stats.ahead = 0;
@@ -353,7 +360,7 @@ namespace Flux::Planetology {
             const float appear = std::chrono::duration<float>(m_now - stored->second.sown).count() / FadeTime;
             m_cells.push_back({{static_cast<float>(plain.origin.x), static_cast<float>(plain.origin.y), static_cast<float>(plain.origin.z),
                                 std::bit_cast<float>(stored->second.slot)},
-                               {std::clamp(appear, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f}});
+                               {std::clamp(appear, 0.0f, 1.0f), stored->second.local[0], stored->second.local[1], stored->second.local[2]}});
         }
         // Puis, avec ce qui reste du semis de l'image, celles d'avance, les plus proches d'abord, sans celles en vue
         // (déjà servies). Toutes marquées avant : une plaine semée d'avance ne prend pas la case d'une autre de la
@@ -425,6 +432,18 @@ namespace Flux::Planetology {
             }
             firstInstance += Capacities[list];
         }
+        // Litière : une boîte par arbre de près, sur les arbres de la liste Near (même nombre et même premier, écrits
+        // par computeFinalize).
+        for (std::uint32_t species = 0; species < std::min<std::size_t>(models.size(), MaxSpecies); ++species) {
+            const GpuModel* litter = models[species].litter;
+            if (!loaded(models[species]) || !litter || litter->primitives.empty() || m_commands.size() >= MaxCommands) {
+                continue;
+            }
+            const GpuMaterial& material = litter->materials[litter->primitives[0].material];
+            data.commandLists[m_commands.size()] = Near * MaxSpecies + species;
+            m_litter.push_back({static_cast<std::uint32_t>(m_commands.size()), material.index, 0.5f * litter->bounds.GetSize().x});
+            m_commands.push_back({LitterIndices, 0, 0, 0, 0});
+        }
         std::array<std::uint32_t, CounterOffset + CounterCount> words{};
         std::memcpy(words.data(), m_commands.data(), m_commands.size() * sizeof(RHI::DrawIndexedCommand));
         frame.commands->Write(words.data(), sizeof(words));
@@ -455,7 +474,7 @@ namespace Flux::Planetology {
             data.receiverSides[side] = vector(receivers.GetSides()[side], 0.0f);
         }
         data.toSun = vector(receivers.GetToSun(), ShadowCasterDistance);
-        data.counts = {static_cast<std::uint32_t>(m_commands.size()), frame.culled, 0, 0};
+        data.counts = {static_cast<std::uint32_t>(m_commands.size()), frame.culled, m_plants, 0};
         // Comme MeshRenderer : du dernier dixième de la dernière cascade proche à la portée.
         data.forest = {0.9f * ShadowCascadeEnds[ShadowCascadeCount - 1], m_range, m_understoryRange, 0.0f};
         const RHI::Buffer* pyramid = m_pyramid.buffer ? m_pyramid.buffer : frame.cells.get();

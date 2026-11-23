@@ -52,6 +52,19 @@ namespace Flux::Planetology {
             return true;
         }
 
+        bool ReadBool(const Json& document, const char* key, bool& value, std::string& error) {
+            const auto found = document.find(key);
+            if (found == document.end()) {
+                return true;
+            }
+            if (!found->is_boolean()) {
+                error = std::format("« {} » doit être true ou false", key);
+                return false;
+            }
+            value = found->get<bool>();
+            return true;
+        }
+
         std::expected<Json, std::string> ParseObject(std::string_view text) {
             Json document = Json::parse(text.begin(), text.end(), nullptr, false);
             if (document.is_discarded() || !document.is_object()) {
@@ -94,7 +107,8 @@ namespace Flux::Planetology {
             || !ReadNumber(*document, "maxSlope", species.maxSlope, error) || !ReadNumber(*document, "tint", species.tint, error)
             || !ReadNumber(*document, "trunkRadius", species.trunkRadius, error)
             || !ReadNumber(*document, "trunkHeight", species.trunkHeight, error)
-            || !ReadNumber(*document, "spacing", species.spacing, error)) {
+            || !ReadNumber(*document, "spacing", species.spacing, error)
+            || !ReadString(*document, "litter", species.litter, error) || !ReadBool(*document, "plant", species.plant, error)) {
             return std::unexpected(error);
         }
         if (const auto color = document->find("canopyColor"); color != document->end()) {
@@ -211,10 +225,11 @@ namespace Flux::Planetology {
         }
         const Math::LinearColor& color = species.canopyColor;
         text += std::format("  ],\n  \"minScale\": {},\n  \"maxScale\": {},\n  \"maxSlope\": {},\n  \"tint\": {},\n"
-                            "  \"trunkRadius\": {},\n  \"trunkHeight\": {},\n  \"spacing\": {},\n  \"canopyColor\": [{}, {}, {}]\n}}\n",
+                            "  \"trunkRadius\": {},\n  \"trunkHeight\": {},\n  \"spacing\": {},\n  \"canopyColor\": [{}, {}, {}],\n"
+                            "  \"litter\": {},\n  \"plant\": {}\n}}\n",
                             Number(species.minScale), Number(species.maxScale), Number(species.maxSlope), Number(species.tint),
                             Number(species.trunkRadius), Number(species.trunkHeight), Number(species.spacing),
-                            Number(color.r), Number(color.g), Number(color.b));
+                            Number(color.r), Number(color.g), Number(color.b), String(species.litter), species.plant);
         return text;
     }
 
