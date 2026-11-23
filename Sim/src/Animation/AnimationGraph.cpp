@@ -127,10 +127,14 @@ namespace Flux {
                 return std::unexpected("un état sans « name »");
             }
             const auto context = [&state](const std::string& error) { return std::unexpected(std::format("état « {} » : {}", state.name, error)); };
-            for (Result read : {ReadText(entry, "tag", state.tag), ReadNumber(entry, "speed", state.speed), ReadBool(entry, "loop", state.loop)}) {
+            for (Result read : {ReadText(entry, "tag", state.tag), ReadNumber(entry, "speed", state.speed), ReadBool(entry, "loop", state.loop),
+                                 ReadNumber(entry, "start", state.start), ReadNumber(entry, "end", state.end)}) {
                 if (!read) {
                     return context(read.error());
                 }
+            }
+            if (state.start < 0.0f || (state.end > 0.0f && state.end <= state.start)) {
+                return context("« start » doit être positif et « end » plus grand que « start »");
             }
             std::string single;
             if (auto read = ReadText(entry, "animation", single); !read) {

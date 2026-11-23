@@ -485,7 +485,7 @@ planète donne directement le sien comme indice d'instance.
   les os de leur masque (un os et ses descendants), pour leur part (`"weight"` : nombre ou paramètre, atteinte en
   `"fade"` secondes ; `"modelSpace"` : le premier os du masque garde son orientation du clip vue du modèle, quelles que
   soient les hanches du dessous). Chaque couche a ses états (une animation, ou plusieurs mélangées selon un paramètre, cycles
-  calés en phase) et ses transitions à conditions (`speed > 0.1`), essayées dans l'ordre du fichier, avec fondu. Le
+  calés en phase, ou un morceau d'animation : `"start"`, `"end"`) et ses transitions à conditions (`speed > 0.1`), essayées dans l'ordre du fichier, avec fondu. Le
   graphe du personnage est un asset du jeu (`Animations/Personnage.fluxanim`) ; le moteur ne pose que les paramètres
   d'un personnage (`AnimationParameters` : vitesse, allure, temps en l'air, siège), le jeu les siens
   (`Animator::SetParameter`). `"files"` ajoute aux animations du modèle celles d'autres fichiers du même squelette

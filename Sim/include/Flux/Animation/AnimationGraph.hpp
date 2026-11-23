@@ -45,6 +45,11 @@ namespace Flux {
             int blendParameter = -1;
             float speed = 1.0f; // vitesse de lecture
             bool loop = true;   // sinon jouée une fois, finie sur sa dernière image
+            // Morceau des animations joué, en secondes : de start à end (0 ou au-delà de la durée : jusqu'à la fin).
+            // Garde la partie utile d'un clip trop long sans toucher au fichier (« Pistol Aim » de Mixamo vise
+            // 1,25 s puis baisse l'arme).
+            float start = 0.0f;
+            float end = 0.0f;
         };
 
         enum class Compare : std::uint8_t { Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual };

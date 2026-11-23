@@ -325,18 +325,18 @@ namespace {
             ModelSkeleton turned;
             turned.nodes.push_back({"hanches", -1, {}, {}, {1, 1, 1}});
             turned.nodes.push_back({"torse", 0, {}, {}, {1, 1, 1}});
-            const Quaternionf yaw = Quaternionf::FromAxisAngle({0, 1, 0}, 0.94f);
+            const Math::Quaternionf yaw = Math::Quaternionf::FromAxisAngle({0, 1, 0}, 0.94f);
             ModelAnimation profile{"Profil", 1.0f, {}};
             profile.channels.push_back({0, AnimationPath::Rotation, AnimationInterpolation::Step, {0}, {yaw.x, yaw.y, yaw.z, yaw.w}});
             turned.animations.push_back(std::move(profile));
             const AnimationSample over[] = {{nullptr, 0.0, true, 1.0f, 0}, {&turned.animations[0], 0.0, true, 1.0f, 1}};
-            const auto same = [](const Quaternionf& a, const Quaternionf& b) { return std::abs(Math::Dot(a, b)) > 0.9999f; };
+            const auto same = [](const Math::Quaternionf& a, const Math::Quaternionf& b) { return std::abs(Math::Dot(a, b)) > 0.9999f; };
             const PoseLayer local[] = {{1, 1.0f}};
             pose.EvaluateLayers(turned, over, local);
-            CHECK(same(pose.GetLocalPoses()[1].rotation, Quaternionf::Identity()));
+            CHECK(same(pose.GetLocalPoses()[1].rotation, Math::Quaternionf::Identity()));
             const PoseLayer model[] = {{1, 1.0f, true}};
             pose.EvaluateLayers(turned, over, model);
-            CHECK(same(pose.GetLocalPoses()[0].rotation, Quaternionf::Identity()) && same(pose.GetLocalPoses()[1].rotation, yaw));
+            CHECK(same(pose.GetLocalPoses()[0].rotation, Math::Quaternionf::Identity()) && same(pose.GetLocalPoses()[1].rotation, yaw));
             CHECK(ParseAnimationGraph(R"({"states": [{"name": "A", "animation": "a"}],
                 "layers": [{"name": "B", "mask": "torse", "modelSpace": true, "states": [{"name": "B", "animation": "b"}]}]})")->layers[1].modelSpace);
         }
@@ -376,6 +376,27 @@ namespace {
         Animator::SetParameter(animator, *library.GetGraph("arme.fluxanim"), "armed", 0.0f);
         Animator::Update(scene, library, 0.25);
         CHECK(Close(animator.layers[1].weight, 0.5f));
+
+        // Morceau d'un clip : de 1 à 2 s d'une animation de 4 s, en boucle ; une fois, il dure 1 s.
+        {
+            ModelSkeleton longer = LayeredSkeleton();
+            longer.animations[1].duration = 4.0f;
+            library.SetSkeleton("long.glb", std::move(longer));
+            auto ranged = ParseAnimationGraph(R"({"states": [{"name": "Viser", "animation": "Viser", "start": 1, "end": 2},
+                {"name": "Une fois", "animation": "Viser", "start": 1, "end": 2, "loop": false, "tag": "once"}]})");
+            CHECK(ranged && ranged->layers[0].states[0].start == 1.0f && ranged->layers[0].states[0].end == 2.0f);
+            library.SetGraph("morceau.fluxanim", std::move(*ranged));
+            const Entity aimer = scene.CreateEntity("Viseur");
+            scene.Add<ModelComponent>(aimer).model = "long.glb";
+            scene.Add<AnimatorComponent>(aimer, AnimatorComponent{.graph = "morceau.fluxanim"});
+            AnimatorComponent& aim = scene.Get<AnimatorComponent>(aimer);
+            Animator::Update(scene, library, 0.25);
+            CHECK(aim.clipCount == 1 && !aim.clips[0].loop && Close(aim.clips[0].time, 1.25f));
+            Animator::Update(scene, library, 1.0);
+            CHECK(Close(aim.clips[0].time, 1.25f));
+            CHECK(Close(Animator::GetTagDuration(library, aim, "long.glb", "once"), 1.0f));
+            CHECK(!ParseAnimationGraph(R"({"states": [{"name": "A", "animation": "a", "start": 2, "end": 1}]})"));
+        }
         return true;
     }
 
