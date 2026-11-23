@@ -647,6 +647,16 @@ namespace Flux {
         std::uint8_t clipCount = 0;
     };
 
+    // Accroche l'entité à un os du modèle animé de son parent (arme dans la main, casque sur la tête) : à chaque pas
+    // du jeu, et dans l'éditeur sur la première image de l'animation, sa position et sa rotation suivent l'os, décalées
+    // de position et rotation dans le repère de l'os. Son échelle reste la sienne.
+    struct BoneAttachmentComponent
+    {
+        std::string bone{}; // nom du nœud dans le fichier du modèle du parent
+        Math::Vector3f position;
+        Math::Quaternionf rotation;
+    };
+
     // Point de l'écran (ou de la vue de l'éditeur) auquel un élément d'interface est accroché.
     enum class ScreenAnchor : std::uint8_t {
         TopLeft,

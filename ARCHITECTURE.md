@@ -493,6 +493,9 @@ planète donne directement le sien comme indice d'instance.
   fondus au plus (le plus récent prend sa part sur les autres : un fondu interrompu ne saute pas) et en tire jusqu'à
   32 animations pondérées, marquées de leur couche. Les sièges lisent la durée des états étiquetés `sitDown` et
   `standUp`.
+- Objets accrochés à un os (`BoneAttachmentComponent`, `Attachments::Update` après l'animation, et à chaque image
+  dans l'éditeur jeu arrêté) : la simulation calcule la pose du parent (`Animator::Pose`, seulement s'il porte un
+  objet) et place l'enfant sur l'os, décalé dans le repère de l'os.
 - Rendu : `MeshRenderer::Pose` échantillonne ces animations (`PoseEvaluator::EvaluateLayers` : moyenne pondérée dans
   chaque couche, rotations en nlerp, puis chaque couche sur les os de son masque) et envoie les matrices des os au GPU.
 

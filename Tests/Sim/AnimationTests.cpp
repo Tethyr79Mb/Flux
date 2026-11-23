@@ -6,6 +6,7 @@
 #include "Flux/Animation/AnimationGraph.hpp"
 #include "Flux/Animation/AnimationLibrary.hpp"
 #include "Flux/Animation/Animator.hpp"
+#include "Flux/Animation/Attachments.hpp"
 #include "Flux/Assets/Model.hpp"
 #include "Flux/Scene/Scene.hpp"
 
@@ -355,6 +356,48 @@ namespace {
         return true;
     }
 
+    bool RunAttachmentTests() {
+        // Décomposition d'une matrice de nœud : ce qui l'a composée.
+        const NodePose built{{1, 2, 3}, Math::Quaternionf::FromAxisAngle({0, 1, 0}, 0.7f), {2, 2, 2}};
+        const NodePose back = DecomposeMatrix(ComposeMatrix(built));
+        CHECK(Near(back.translation, built.translation) && Near(back.scale, built.scale));
+        CHECK(std::abs(std::abs(Math::Dot(back.rotation, built.rotation)) - 1.0f) < 1.0e-5f);
+
+        // Main un mètre au-dessus des hanches ; l'animation « Lever » la monte à 2 m, tournée d'un quart de tour (y).
+        ModelSkeleton skeleton;
+        skeleton.nodes.push_back({"hanches", -1, {}, {}, {1, 1, 1}});
+        skeleton.nodes.push_back({"main", 0, {0, 1, 0}, {}, {1, 1, 1}});
+        const Math::Quaternionf quarter = Math::Quaternionf::FromAxisAngle({0, 1, 0}, 0.5f * 3.14159265f);
+        ModelAnimation raise{"Lever", 1.0f, {}};
+        raise.channels.push_back({1, AnimationPath::Translation, AnimationInterpolation::Step, {0}, {0, 2, 0}});
+        raise.channels.push_back({1, AnimationPath::Rotation, AnimationInterpolation::Step, {0}, {quarter.x, quarter.y, quarter.z, quarter.w}});
+        skeleton.animations.push_back(raise);
+        AnimationLibrary library;
+        library.SetSkeleton("soldat.glb", skeleton);
+
+        Scene scene;
+        const Entity soldier = scene.CreateEntity("Soldat");
+        scene.Add<ModelComponent>(soldier).model = "soldat.glb";
+        scene.Add<AnimatorComponent>(soldier);
+        const Entity gun = scene.CreateEntity("Pistolet", soldier);
+        scene.Add<BoneAttachmentComponent>(gun, BoneAttachmentComponent{.bone = "main", .position = {0, 0, 0.1f}});
+        const Entity lost = scene.CreateEntity("Perdu", soldier);
+        scene.Get<TransformComponent>(lost).position = {7, 0, 0};
+        scene.Add<BoneAttachmentComponent>(lost, BoneAttachmentComponent{.bone = "queue"});
+        PoseEvaluator evaluator;
+        // Éditeur (rien de joué) : la première image de l'animation ; le décalage suit la rotation de l'os (z -> x).
+        Attachments::Update(scene, library, evaluator);
+        const TransformComponent& placed = scene.Get<TransformComponent>(gun);
+        CHECK(Near(Vector3f(placed.position), {0.1f, 2, 0}));
+        CHECK(std::abs(std::abs(Math::Dot(placed.rotation, quarter)) - 1.0f) < 1.0e-5f);
+        // Pendant le jeu, d'après les animations de l'animateur ; un os inconnu laisse l'objet où il est.
+        Animator::Update(scene, library, 0.5);
+        Attachments::Update(scene, library, evaluator);
+        CHECK(Near(Vector3f(placed.position), {0.1f, 2, 0}));
+        CHECK(Near(Vector3f(scene.Get<TransformComponent>(lost).position), {7, 0, 0}));
+        return true;
+    }
+
     bool RunAnimatorTests() {
         // Le graphe du personnage du jeu, tel qu'il est livré.
         AnimationLibrary library;
@@ -459,7 +502,7 @@ bool RunAnimationTests() {
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory);
-    const bool passed = RunLoadingTests(directory) && RunSamplingTests() && RunGraphParsingTests() && RunLayerParsingTests() && RunAnimatorTests() && RunLayerTests();
+    const bool passed = RunLoadingTests(directory) && RunSamplingTests() && RunGraphParsingTests() && RunLayerParsingTests() && RunAnimatorTests() && RunLayerTests() && RunAttachmentTests();
     std::filesystem::remove_all(directory, error);
     return passed;
 }

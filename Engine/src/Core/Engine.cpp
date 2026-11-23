@@ -521,6 +521,9 @@ namespace Flux {
                 m_editorUpdate(*this, deltaSeconds);
             }
             Orbits::Update(GetScene()); // après l'inspecteur : une orbite changée place la planète dès cette image
+            if (m_gameState == GameState::Stopped) {
+                m_simulation.UpdateAttachments(); // éditeur : l'arme reste dans la main quand on règle son décalage
+            }
             // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
             // HUD sous les interfaces de la scène (menus, inventaire) ; rien sous un menu opaque plein écran, connu à
             // l'image précédente (les interfaces sont dessinées après).

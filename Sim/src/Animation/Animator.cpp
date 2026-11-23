@@ -7,6 +7,7 @@
 #include "Flux/Scene/Scene.hpp"
 
 #include <algorithm>
+#include <array>
 #include <span>
 #include <tuple>
 
@@ -360,6 +361,29 @@ namespace Flux::Animator {
             Advance(animator, library.GetGraph(animator.graph), *skeleton, scene.TryGet<CharacterComponent>(entity),
                     static_cast<float>(deltaSeconds));
         }
+    }
+
+    void Pose(PoseEvaluator& evaluator, const ModelSkeleton& skeleton, const AnimatorComponent* animator) {
+        const std::vector<ModelAnimation>& animations = skeleton.animations;
+        if (!animator || animator->clipCount == 0) {
+            evaluator.Evaluate(skeleton, AnimationSample{animator ? FindAnimation(skeleton, animator->animation) : nullptr, 0.0, false});
+            return;
+        }
+        std::array<AnimationSample, AnimatorComponent::MaxClips> samples;
+        std::size_t count = 0;
+        for (const AnimationClipWeight& clip : std::span(animator->clips).first(animator->clipCount)) {
+            if (clip.animation >= 0 && static_cast<std::size_t>(clip.animation) < animations.size()) {
+                samples[count++] = {&animations[static_cast<std::size_t>(clip.animation)], clip.time, clip.loop, clip.weight, clip.layer};
+            }
+        }
+        // Couches par-dessus le corps (haut du corps…) : l'os de leur masque ; un masque introuvable ne joue rien.
+        std::array<PoseLayer, AnimatorComponent::MaxLayers - 1> layers;
+        std::size_t layerCount = 0;
+        for (std::size_t l = 1; l < animator->layerCount; ++l) {
+            const AnimatorLayer& layer = animator->layers[l];
+            layers[layerCount++] = {layer.maskNode, layer.maskNode >= -1 ? layer.weight : 0.0f};
+        }
+        evaluator.EvaluateLayers(skeleton, std::span(samples).first(count), std::span(layers).first(layerCount));
     }
 
     bool SetParameter(AnimatorComponent& animator, const AnimationGraph& graph, std::string_view name, float value) {

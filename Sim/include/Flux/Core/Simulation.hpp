@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Animation/Animation.hpp"
 #include "Flux/Animation/AnimationLibrary.hpp"
 #include "Flux/Core/Project.hpp"
 #include "Flux/Core/SimulationClock.hpp"
@@ -121,6 +122,9 @@ namespace Flux {
         // Squelettes et graphes d'animation du projet, relus à chaque Start ou LoadScene (fichiers modifiés entre deux
         // parties). Le jeu y trouve le graphe d'un animateur pour poser ses paramètres (Animator::SetParameter).
         AnimationLibrary& GetAnimations() { return m_animations; }
+        // Objets accrochés aux os (BoneAttachmentComponent) placés d'après les animations en cours ; fait par Step,
+        // à appeler hors du jeu (éditeur) pour les voir sur la première image de l'animation.
+        void UpdateAttachments();
 
         // Projectiles en vol : ceux que le jeu y ajoute (ses armes) avancent et touchent ici, sont dessinés par le
         // moteur.
@@ -169,6 +173,7 @@ namespace Flux {
             InputActionId interact = NoInputAction;
         } m_characterActions;
         AnimationLibrary m_animations;
+        PoseEvaluator m_attachmentPose; // pose des parents d'objets accrochés
         PlayerCommand m_localCommand;
         Entity m_localPlayer = NullEntity; // monde répliqué seulement (SetLocalPlayer)
         std::vector<std::pair<Entity, PlayerCommand>> m_commands; // des autres joueurs, pour le prochain pas

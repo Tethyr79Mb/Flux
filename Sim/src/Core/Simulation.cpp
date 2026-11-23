@@ -1,6 +1,7 @@
 #include "Flux/Core/Simulation.hpp"
 
 #include "Flux/Animation/Animator.hpp"
+#include "Flux/Animation/Attachments.hpp"
 #include "Flux/Physics/PhysicsContext.hpp"
 #include "Flux/Physics/PhysicsWorld.hpp"
 #include "Flux/Platform/Filesystem.hpp"
@@ -251,6 +252,7 @@ namespace Flux {
             &m_projectileHits);
         RunSystems(Stage::AfterPhysics, deltaSeconds); // dégâts (GetProjectileHits), armes du joueur et des ennemis
         Animator::Update(m_scene, m_animations, deltaSeconds); // après la physique : les pas du personnage de ce pas
+        UpdateAttachments();
         // Les commandes des autres joueurs ne valent que pour ce pas (celle de cet écran reste : vol libre, caméra).
         m_playerSteps.clear();
         m_commands.clear();
@@ -285,6 +287,11 @@ namespace Flux {
         }
         std::ranges::sort(m_characterMotions, {}, &CharacterMotion::entity);
         Animator::Update(m_scene, m_animations, deltaSeconds);
+        UpdateAttachments();
+    }
+
+    void Simulation::UpdateAttachments() {
+        Attachments::Update(m_scene, m_animations, m_attachmentPose);
     }
 
     bool Simulation::ConsumeInteraction(Entity player) {
