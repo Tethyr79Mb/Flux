@@ -498,6 +498,34 @@ namespace {
             CHECK(std::abs(std::abs(Math::Dot(fittedPose.GetLocalPoses()[1].rotation, expected)) - 1.0f) < 1.0e-4f);
         }
 
+        // Personnage exporté de Blender : armature tournée de 90° (rig FBX), compensée sur les hanches ; clip d'assimp
+        // sans cette rotation. Hanches tournées (tir de profil) et torse plié : les mêmes rotations vues du modèle.
+        {
+            const auto same = [](const Math::Quaternionf& a, const Math::Quaternionf& b) { return std::abs(Math::Dot(a, b)) > 0.9999f; };
+            const Math::Quaternionf upright = Math::Quaternionf::FromAxisAngle({1, 0, 0}, 1.5707963f);
+            ModelSkeleton blender;
+            blender.nodes.push_back({"Armature", -1, {}, upright, {1, 1, 1}});
+            blender.nodes.push_back({"mixamorig:Hips", 0, {0, 0, 1}, upright.Conjugate(), {1, 1, 1}});
+            blender.nodes.push_back({"mixamorig:Spine", 1, {0, 0.3f, 0}, {}, {1, 1, 1}});
+            ModelSkeleton clip;
+            clip.nodes.push_back({"mixamorig:Hips", -1, {0, 1, 0}, {}, {1, 1, 1}});
+            clip.nodes.push_back({"mixamorig:Spine", 0, {0, 0.3f, 0}, {}, {1, 1, 1}});
+            const Math::Quaternionf yaw = Math::Quaternionf::FromAxisAngle({0, 1, 0}, 0.94f);
+            const Math::Quaternionf bend = Math::Quaternionf::FromAxisAngle({0, 0, 1}, 0.5f);
+            ModelAnimation profile{"Profil", 1.0f, {}};
+            profile.channels.push_back({0, AnimationPath::Translation, AnimationInterpolation::Linear, {0}, {0, 1, 0}});
+            profile.channels.push_back({0, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {yaw.x, yaw.y, yaw.z, yaw.w}});
+            profile.channels.push_back({1, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {bend.x, bend.y, bend.z, bend.w}});
+            clip.animations.push_back(profile);
+            const std::vector<ModelAnimation> turned = RetargetAnimations(clip, blender);
+            CHECK(turned.size() == 1);
+            PoseEvaluator turnedPose;
+            turnedPose.Evaluate(blender, AnimationSample{&turned[0], 0.0, false});
+            const std::span<const NodePose> poses = turnedPose.GetLocalPoses();
+            const Math::Quaternionf hipsModel = poses[0].rotation * poses[1].rotation;
+            CHECK(same(hipsModel, yaw) && same(hipsModel * poses[2].rotation, yaw * bend));
+        }
+
         AnimationLibrary library;
         library.SetSkeleton("soldat.glb", model);
         library.SetSkeleton("Animations/marche.glb", file);

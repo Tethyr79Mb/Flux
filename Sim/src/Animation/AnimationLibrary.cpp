@@ -53,8 +53,9 @@ namespace Flux {
             }
         }
         // Les hanches : le nœud recâblé le plus haut dont la place est animée (sinon le plus haut recâblé). Les
-        // rotations sont comparées dans le repère de son parent (l'armature) : celui-ci peut différer d'un fichier
-        // à l'autre (unité, axes, nœud racine en plus).
+        // rotations sont comparées dans le repère du modèle (glTF : Y en haut dans tout fichier), parents des hanches
+        // compris à leur repos : l'armature peut être tournée autrement d'un fichier à l'autre (Blender garde la
+        // rotation de 90° d'un rig FBX sur l'armature et la compense sur les hanches ; assimp, non).
         std::vector<int> depths(source.nodes.size(), 0);
         for (std::size_t i = 0; i < source.nodes.size(); ++i) {
             const int parent = source.nodes[i].parent;
@@ -84,21 +85,33 @@ namespace Flux {
             return false;
         };
         const int targetHips = nodes[static_cast<std::size_t>(hips)];
-        // Rotation de chaque nœud dans le repère du parent des hanches, d'après des rotations locales (0 au-dessus).
-        const auto globals = [&isUnder](const ModelSkeleton& skeleton, int top, const auto& local, std::vector<Math::Quaternionf>& out) {
+        // Rotation des parents de node à leur repos, dans le repère du modèle.
+        const auto restAbove = [](const ModelSkeleton& skeleton, int node) {
+            Math::Quaternionf rotation{};
+            for (int n = skeleton.nodes[static_cast<std::size_t>(node)].parent; n >= 0; n = skeleton.nodes[static_cast<std::size_t>(n)].parent) {
+                rotation = skeleton.nodes[static_cast<std::size_t>(n)].rotation * rotation;
+            }
+            return rotation;
+        };
+        const Math::Quaternionf sourceAbove = restAbove(source, hips);
+        const Math::Quaternionf targetAbove = restAbove(target, targetHips);
+        // Rotation de chaque nœud sous top dans le repère du modèle, d'après des rotations locales (above : celle des
+        // parents de top ; 0 hors de top).
+        const auto globals = [&isUnder](const ModelSkeleton& skeleton, int top, const Math::Quaternionf& above, const auto& local,
+                                        std::vector<Math::Quaternionf>& out) {
             out.assign(skeleton.nodes.size(), Math::Quaternionf{});
             for (std::size_t i = 0; i < skeleton.nodes.size(); ++i) {
                 if (!isUnder(skeleton, static_cast<int>(i), top)) {
                     continue;
                 }
                 const int parent = skeleton.nodes[i].parent;
-                out[i] = static_cast<int>(i) == top || parent < 0 ? local(i) : out[static_cast<std::size_t>(parent)] * local(i);
+                out[i] = static_cast<int>(i) == top || parent < 0 ? above * local(i) : out[static_cast<std::size_t>(parent)] * local(i);
             }
         };
         std::vector<Math::Quaternionf> sourceRest;
         std::vector<Math::Quaternionf> targetRest;
-        globals(source, hips, [&](std::size_t i) { return source.nodes[i].rotation; }, sourceRest);
-        globals(target, targetHips, [&](std::size_t i) { return target.nodes[i].rotation; }, targetRest);
+        globals(source, hips, sourceAbove, [&](std::size_t i) { return source.nodes[i].rotation; }, sourceRest);
+        globals(target, targetHips, targetAbove, [&](std::size_t i) { return target.nodes[i].rotation; }, targetRest);
 
         const SkeletonNode& fromHips = source.nodes[static_cast<std::size_t>(hips)];
         const SkeletonNode& toHips = target.nodes[static_cast<std::size_t>(targetHips)];
@@ -106,7 +119,7 @@ namespace Flux {
         const float hipsRatio = fromHeight > 1.0e-6f ? Math::Length(toHips.translation) / fromHeight : 1.0f;
 
         // Échantillonnée à 30 images par seconde (celles de Mixamo) : chaque os de target prend la même rotation
-        // que dans source par rapport à son repos, dans le repère de l'armature (indépendant des axes propres des
+        // que dans source par rapport à son repos, dans le repère du modèle (indépendant des axes propres des
         // os, qui changent selon le logiciel d'export) ; les hanches se déplacent à l'échelle de target ; les autres
         // os gardent leur longueur.
         constexpr float Rate = 30.0f;
@@ -143,8 +156,8 @@ namespace Flux {
                 const float time = std::min(static_cast<float>(frame) / Rate, animation.duration);
                 evaluator.Evaluate(source, AnimationSample{&animation, time, false});
                 const std::span<const NodePose> local = evaluator.GetLocalPoses();
-                globals(source, hips, [&](std::size_t i) { return local[i].rotation; }, sourcePose);
-                // Rotations de target dans le repère de l'armature, parents avant enfants : un os sans pareil dans
+                globals(source, hips, sourceAbove, [&](std::size_t i) { return local[i].rotation; }, sourcePose);
+                // Rotations de target dans le repère du modèle, parents avant enfants : un os sans pareil dans
                 // source suit son parent à son repos.
                 targetPose.assign(target.nodes.size(), Math::Quaternionf{});
                 for (std::size_t t = 0; t < target.nodes.size(); ++t) {
@@ -152,7 +165,7 @@ namespace Flux {
                         continue;
                     }
                     const int parent = target.nodes[t].parent;
-                    const Math::Quaternionf above = static_cast<int>(t) == targetHips || parent < 0 ? Math::Quaternionf{}
+                    const Math::Quaternionf above = static_cast<int>(t) == targetHips || parent < 0 ? targetAbove
                                                                                                : targetPose[static_cast<std::size_t>(parent)];
                     if (sources[t] < 0) {
                         targetPose[t] = above * target.nodes[t].rotation;
