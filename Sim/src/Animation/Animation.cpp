@@ -266,6 +266,15 @@ namespace Flux {
             }
             return true;
         }
+
+        // Rotation de node dans le repère du modèle (échelles des parents supposées uniformes).
+        Quaternionf ModelRotation(const ModelSkeleton& skeleton, std::span<const NodePose> poses, int node) {
+            Quaternionf rotation = Quaternionf::Identity();
+            for (; node >= 0; node = skeleton.nodes[static_cast<std::size_t>(node)].parent) {
+                rotation = poses[static_cast<std::size_t>(node)].rotation * rotation;
+            }
+            return rotation;
+        }
     }
 
     void PoseEvaluator::EvaluateLayers(const ModelSkeleton& skeleton, std::span<const AnimationSample> samples,
@@ -278,6 +287,15 @@ namespace Flux {
             if (weight <= 0.0f || layer.node >= static_cast<int>(nodeCount)
                 || !BlendLayer(skeleton, samples, static_cast<std::uint8_t>(l + 1), m_layer, m_sample)) {
                 continue;
+            }
+            // Premier os du masque ramené sous les parents de la pose du dessous, pour qu'il garde son orientation de la
+            // couche dans le repère du modèle : parent du dessous x local = parent de la couche x local de la couche.
+            if (layer.modelSpace && layer.node >= 0) {
+                const int parent = skeleton.nodes[static_cast<std::size_t>(layer.node)].parent;
+                const Quaternionf below = ModelRotation(skeleton, m_poses, parent);
+                const Quaternionf over = ModelRotation(skeleton, m_layer, parent);
+                NodePose& root = m_layer[static_cast<std::size_t>(layer.node)];
+                root.rotation = Math::Normalize(below.Conjugate() * over * root.rotation);
             }
             // Os du masque : le nœud et ses descendants (parents avant enfants : un seul passage).
             m_masked.assign(nodeCount, 0);

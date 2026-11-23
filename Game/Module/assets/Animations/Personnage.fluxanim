@@ -45,6 +45,7 @@
       "mask": "Spine",
       "weight": "armed",
       "fade": 0.3,
+      "modelSpace": true,
       "start": "Tenir",
       "states": [
         { "name": "Tenir", "animation": "PistoletTenir" },

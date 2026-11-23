@@ -90,6 +90,10 @@ namespace Flux {
             int weightParameter = -1;
             float weight = 1.0f; // sans paramètre
             float fade = 0.25f;
+            // Rotation du premier os du masque prise dans le repère du modèle et non par rapport à son parent : le buste
+            // garde l'orientation du clip même quand les hanches de la couche du dessous regardent ailleurs (clip de
+            // tir de profil, hanches tournées, joué sur la marche).
+            bool modelSpace = false;
         };
 
         static constexpr std::size_t MaxLayers = 4;

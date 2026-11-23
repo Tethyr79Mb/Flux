@@ -255,12 +255,14 @@ namespace Flux {
             return {};
         }
 
-        // Couche par-dessus le corps : { "name", "mask": "os", "weight": "paramètre" ou nombre, "fade", "states", ... }.
+        // Couche par-dessus le corps : { "name", "mask": "os", "weight": "paramètre" ou nombre, "fade", "modelSpace",
+        // "states", ... }.
         Result ReadLayer(const Json& entry, const Graph& graph, Graph::Layer& layer) {
             if (!entry.is_object()) {
                 return std::unexpected("une couche est un objet { \"name\": ..., \"mask\": ..., \"states\": [...] }");
             }
-            for (Result read : {ReadText(entry, "name", layer.name), ReadText(entry, "mask", layer.mask), ReadNumber(entry, "fade", layer.fade)}) {
+            for (Result read : {ReadText(entry, "name", layer.name), ReadText(entry, "mask", layer.mask), ReadNumber(entry, "fade", layer.fade),
+                                 ReadBool(entry, "modelSpace", layer.modelSpace)}) {
                 if (!read) {
                     return read;
                 }

@@ -46,6 +46,9 @@ namespace Flux {
     {
         int node = -1;
         float weight = 1.0f;
+        // Rotation de node vue du modèle : node prend l'orientation qu'il a dans la couche, quels que soient ses
+        // parents dans la pose du dessous (Graph::Layer::modelSpace).
+        bool modelSpace = false;
     };
 
     // Calcule la pose d'un squelette. Garde ses tableaux d'une fois sur l'autre : aucune allocation une fois rodé.

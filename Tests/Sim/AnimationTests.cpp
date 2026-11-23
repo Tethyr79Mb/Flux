@@ -319,6 +319,28 @@ namespace {
         pose.EvaluateLayers(skeleton, samples, whole);
         CHECK(Near(pose.GetLocalPoses()[2].translation, {5, 0, 0}));
 
+        // Couche vue du modèle : le clip tourne les hanches de 54° (tir de profil) ; le torse, masqué, garde cette
+        // orientation sur les hanches de face de la marche, au lieu de la perdre avec elles.
+        {
+            ModelSkeleton turned;
+            turned.nodes.push_back({"hanches", -1, {}, {}, {1, 1, 1}});
+            turned.nodes.push_back({"torse", 0, {}, {}, {1, 1, 1}});
+            const Quaternionf yaw = Quaternionf::FromAxisAngle({0, 1, 0}, 0.94f);
+            ModelAnimation profile{"Profil", 1.0f, {}};
+            profile.channels.push_back({0, AnimationPath::Rotation, AnimationInterpolation::Step, {0}, {yaw.x, yaw.y, yaw.z, yaw.w}});
+            turned.animations.push_back(std::move(profile));
+            const AnimationSample over[] = {{nullptr, 0.0, true, 1.0f, 0}, {&turned.animations[0], 0.0, true, 1.0f, 1}};
+            const auto same = [](const Quaternionf& a, const Quaternionf& b) { return std::abs(Math::Dot(a, b)) > 0.9999f; };
+            const PoseLayer local[] = {{1, 1.0f}};
+            pose.EvaluateLayers(turned, over, local);
+            CHECK(same(pose.GetLocalPoses()[1].rotation, Quaternionf::Identity()));
+            const PoseLayer model[] = {{1, 1.0f, true}};
+            pose.EvaluateLayers(turned, over, model);
+            CHECK(same(pose.GetLocalPoses()[0].rotation, Quaternionf::Identity()) && same(pose.GetLocalPoses()[1].rotation, yaw));
+            CHECK(ParseAnimationGraph(R"({"states": [{"name": "A", "animation": "a"}],
+                "layers": [{"name": "B", "mask": "torse", "modelSpace": true, "states": [{"name": "B", "animation": "b"}]}]})")->layers[1].modelSpace);
+        }
+
         // Animateur : la couche du haut du corps suit le paramètre « armed », atteint en 0,5 s.
         AnimationLibrary library;
         auto graph = ParseAnimationGraph(R"({"parameters": {"armed": 0}, "states": [{"name": "Marche", "animation": "Marche"}],

@@ -244,6 +244,7 @@ namespace Flux::Animator {
                 if (graph) {
                     layer.weight = TargetWeight(animator, graph->layers[l], l);
                     layer.maskNode = l == 0 ? -1 : MaskOf(graph->layers[l], *set.skeleton);
+                    layer.modelSpace = graph->layers[l].modelSpace;
                 }
             }
             animator.started = true;
@@ -393,7 +394,7 @@ namespace Flux::Animator {
         std::size_t layerCount = 0;
         for (std::size_t l = 1; l < animator->layerCount; ++l) {
             const AnimatorLayer& layer = animator->layers[l];
-            layers[layerCount++] = {layer.maskNode, layer.maskNode >= -1 ? layer.weight : 0.0f};
+            layers[layerCount++] = {layer.maskNode, layer.maskNode >= -1 ? layer.weight : 0.0f, layer.modelSpace};
         }
         evaluator.EvaluateLayers(skeleton, std::span(samples).first(count), std::span(layers).first(layerCount));
     }
