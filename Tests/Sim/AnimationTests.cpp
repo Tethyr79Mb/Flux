@@ -234,14 +234,14 @@ namespace {
         if (!graph) {
             std::printf("  %s\n", graph.error().c_str());
         }
-        CHECK(graph && graph->states.size() == 3 && graph->start == 1 && graph->FindTag("fin") == 2 && graph->FindState("Z") < 0);
+        CHECK(graph && graph->layers.size() == 1 && graph->layers[0].states.size() == 3 && graph->layers[0].start == 1 && graph->layers[0].FindTag("fin") == 2 && graph->layers[0].FindState("Z") < 0);
         CHECK(graph->parameters[static_cast<std::size_t>(graph->FindParameter("armed"))].value == 1.0f);
-        const AnimationGraph::State& blend = graph->states[1];
+        const AnimationGraph::State& blend = graph->layers[0].states[1];
         CHECK(blend.points.size() == 2 && blend.points[1].phase == 0.5f && blend.blendParameter == graph->FindParameter("speed"));
-        const AnimationGraph::Transition& first = graph->transitions[0];
+        const AnimationGraph::Transition& first = graph->layers[0].transitions[0];
         CHECK(first.from == 0 && first.to == 1 && first.duration == 0.5f && first.conditions.size() == 2);
         CHECK(first.conditions[0].compare == AnimationGraph::Compare::GreaterEqual && first.conditions[0].value == 1.5f);
-        const AnimationGraph::Transition& second = graph->transitions[1];
+        const AnimationGraph::Transition& second = graph->layers[0].transitions[1];
         CHECK(second.from == -1 && second.atEnd && second.conditions[0].compare == AnimationGraph::Compare::Less
               && second.conditions[0].value == -2.0f);
         // Fautes de frappe dites, pas ignorées.
@@ -254,6 +254,104 @@ namespace {
         CHECK(!parse(R"({"parameters": {"v": 0}, "states": [{"name": "A", "blend": "v", "points": [{"animation": "a", "value": 2},
                          {"animation": "b", "value": 1}]}]})"));
         CHECK(!parse(R"({"states": [{"name": "A", "points": [{"animation": "a"}]}]})")); // sans paramètre de mélange
+        return true;
+    }
+
+    bool RunLayerParsingTests() {
+        const auto graph = ParseAnimationGraph(R"({"parameters": {"armed": 0},
+            "states": [{"name": "Marche", "animation": "Marche"}],
+            "layers": [{"name": "Haut du corps", "mask": "torse", "weight": "armed", "fade": 0.5,
+                        "states": [{"name": "Viser", "animation": "Viser"}, {"name": "Tirer", "animation": "Tirer", "loop": false}],
+                        "transitions": [{"from": "Tirer", "to": "Viser", "atEnd": true}]},
+                       {"name": "Tête", "mask": "tete", "weight": 0.3, "states": [{"name": "Regarder", "animation": "Regarder"}]}]})");
+        if (!graph) {
+            std::printf("  %s\n", graph.error().c_str());
+        }
+        CHECK(graph && graph->layers.size() == 3 && graph->layers[0].name == "Corps" && graph->layers[0].mask.empty());
+        const AnimationGraph::Layer& upper = graph->layers[1];
+        CHECK(upper.name == "Haut du corps" && upper.mask == "torse" && upper.weightParameter == 0 && upper.fade == 0.5f);
+        CHECK(upper.states.size() == 2 && upper.transitions[0].from == 1 && upper.transitions[0].to == 0);
+        CHECK(graph->layers[2].weightParameter < 0 && Close(graph->layers[2].weight, 0.3f));
+        // Une transition ne voit que les états de sa couche ; poids inconnu ; trop de couches.
+        CHECK(!ParseAnimationGraph(R"({"states": [{"name": "A", "animation": "a"}],
+            "layers": [{"name": "B", "states": [{"name": "B", "animation": "b"}], "transitions": [{"to": "A"}]}]})"));
+        CHECK(!ParseAnimationGraph(R"({"states": [{"name": "A", "animation": "a"}],
+            "layers": [{"name": "B", "weight": "armed", "states": [{"name": "B", "animation": "b"}]}]})"));
+        const std::string layer = R"({"name": "B", "states": [{"name": "B", "animation": "b"}]})";
+        CHECK(!ParseAnimationGraph(R"({"states": [{"name": "A", "animation": "a"}], "layers": [)" + layer + "," + layer + "," + layer + ","
+                                   + layer + "]}"));
+        return true;
+    }
+
+    // Hanches à la racine, torse et jambe dessous, bras sous le torse.
+    ModelSkeleton LayeredSkeleton() {
+        ModelSkeleton skeleton;
+        skeleton.nodes.push_back({"hanches", -1, {}, {}, {1, 1, 1}});
+        skeleton.nodes.push_back({"torse", 0, {}, {}, {1, 1, 1}});
+        skeleton.nodes.push_back({"jambe", 0, {}, {}, {1, 1, 1}});
+        skeleton.nodes.push_back({"bras", 1, {}, {}, {1, 1, 1}});
+        // Marche : tout à x = 1 ; Viser : tout à x = 5.
+        for (const auto& [name, x] : {std::pair{"Marche", 1.0f}, {"Viser", 5.0f}}) {
+            ModelAnimation animation{name, 1.0f, {}};
+            for (std::uint32_t node = 1; node < 4; ++node) {
+                animation.channels.push_back({node, AnimationPath::Translation, AnimationInterpolation::Step, {0}, {x, 0, 0}});
+            }
+            skeleton.animations.push_back(std::move(animation));
+        }
+        return skeleton;
+    }
+
+    bool RunLayerTests() {
+        const ModelSkeleton skeleton = LayeredSkeleton();
+        // Pose : la marche pour le corps, la visée sur le torse et ses enfants seulement, à la part de sa couche.
+        PoseEvaluator pose;
+        const AnimationSample samples[] = {{&skeleton.animations[0], 0.0, true, 1.0f, 0}, {&skeleton.animations[1], 0.0, true, 1.0f, 1}};
+        const PoseLayer full[] = {{1, 1.0f}};
+        pose.EvaluateLayers(skeleton, samples, full);
+        CHECK(Near(pose.GetLocalPoses()[1].translation, {5, 0, 0}) && Near(pose.GetLocalPoses()[3].translation, {5, 0, 0}));
+        CHECK(Near(pose.GetLocalPoses()[2].translation, {1, 0, 0}));
+        const PoseLayer half[] = {{1, 0.5f}};
+        pose.EvaluateLayers(skeleton, samples, half);
+        CHECK(Near(pose.GetLocalPoses()[1].translation, {3, 0, 0}) && Near(pose.GetLocalPoses()[2].translation, {1, 0, 0}));
+        const PoseLayer whole[] = {{-1, 1.0f}};
+        pose.EvaluateLayers(skeleton, samples, whole);
+        CHECK(Near(pose.GetLocalPoses()[2].translation, {5, 0, 0}));
+
+        // Animateur : la couche du haut du corps suit le paramètre « armed », atteint en 0,5 s.
+        AnimationLibrary library;
+        auto graph = ParseAnimationGraph(R"({"parameters": {"armed": 0}, "states": [{"name": "Marche", "animation": "Marche"}],
+            "layers": [{"name": "Haut du corps", "mask": "torse", "weight": "armed", "fade": 0.5,
+                        "states": [{"name": "Viser", "animation": "Viser"}]},
+                       {"name": "Fausse", "mask": "queue", "states": [{"name": "Viser", "animation": "Viser"}]}]})");
+        CHECK(graph);
+        library.SetGraph("arme.fluxanim", std::move(*graph));
+        library.SetSkeleton("soldat.glb", LayeredSkeleton());
+        Scene scene;
+        const Entity soldier = scene.CreateEntity("Soldat");
+        scene.Add<ModelComponent>(soldier).model = "soldat.glb";
+        scene.Add<AnimatorComponent>(soldier, AnimatorComponent{.graph = "arme.fluxanim"});
+        AnimatorComponent& animator = scene.Get<AnimatorComponent>(soldier);
+        const auto clipsOf = [&](std::uint8_t layer) {
+            int count = 0;
+            for (std::size_t c = 0; c < animator.clipCount; ++c) {
+                count += animator.clips[c].layer == layer ? 1 : 0;
+            }
+            return count;
+        };
+        Animator::Update(scene, library, 0.1);
+        CHECK(animator.layerCount == 3 && animator.layers[1].maskNode == 1 && animator.layers[1].weight == 0.0f);
+        CHECK(clipsOf(0) == 1 && clipsOf(1) == 0);
+        // Os du masque absent du squelette : la couche ne joue rien, plutôt que d'animer tout le corps.
+        CHECK(animator.layers[2].maskNode < -1 && clipsOf(2) == 0);
+        CHECK(Animator::SetParameter(animator, *library.GetGraph("arme.fluxanim"), "armed", 1.0f));
+        Animator::Update(scene, library, 0.25);
+        CHECK(Close(animator.layers[1].weight, 0.5f) && clipsOf(1) == 1);
+        Animator::Update(scene, library, 1.0);
+        CHECK(animator.layers[1].weight == 1.0f);
+        // Rangée : la part redescend de même.
+        Animator::SetParameter(animator, *library.GetGraph("arme.fluxanim"), "armed", 0.0f);
+        Animator::Update(scene, library, 0.25);
+        CHECK(Close(animator.layers[1].weight, 0.5f));
         return true;
     }
 
@@ -276,17 +374,17 @@ namespace {
 
         // Début du jeu, immobile : le repos, sans fondu.
         Animator::Update(scene, library, 0.1);
-        CHECK(animator.layerCount == 1 && Close(Find(animator, skeleton, "Repos").weight, 1.0f));
+        CHECK(animator.layers[0].fadeCount == 1 && Close(Find(animator, skeleton, "Repos").weight, 1.0f));
         CHECK(Close(Find(animator, skeleton, "Repos").time, 0.1f));
         // Il marche (allure 1) : fondu du repos vers la marche, jouée à vitesse 1.
         character.groundSpeed = 2.0f;
         Animator::Update(scene, library, 0.1);
-        CHECK(animator.layerCount == 2 && Close(Find(animator, skeleton, "Marche").weight, 0.4f));
+        CHECK(animator.layers[0].fadeCount == 2 && Close(Find(animator, skeleton, "Marche").weight, 0.4f));
         CHECK(Close(Find(animator, skeleton, "Repos").weight, 0.6f) && Close(Find(animator, skeleton, "Marche").time, 0.1f));
         // Entre marche et course (allure 1,5) : moitié de chacune, au même point de leur cycle.
         character.groundSpeed = 3.5f;
         Animator::Update(scene, library, 1.0);
-        CHECK(animator.layerCount == 1 && Close(Find(animator, skeleton, "Marche").weight, 0.5f)
+        CHECK(animator.layers[0].fadeCount == 1 && Close(Find(animator, skeleton, "Marche").weight, 0.5f)
               && Close(Find(animator, skeleton, "Course").weight, 0.5f));
         const float walkCycle = Find(animator, skeleton, "Marche").time / 1.0f;
         const float runCycle = Find(animator, skeleton, "Course").time / 0.5f;
@@ -302,13 +400,13 @@ namespace {
         // marche reprend là où son cycle en était.
         character.groundSpeed = 0.0f;
         Animator::Update(scene, library, 0.1);
-        CHECK(animator.layerCount == 2);
+        CHECK(animator.layers[0].fadeCount == 2);
         character.groundSpeed = 2.0f;
         Animator::Update(scene, library, 0.1);
-        CHECK(animator.layerCount == 3 && Close(TotalWeight(animator), 1.0f));
-        CHECK(Close(animator.layers[2].fade, 0.4f) && Close(animator.layers[1].fade, 0.8f));
+        CHECK(animator.layers[0].fadeCount == 3 && Close(TotalWeight(animator), 1.0f));
+        CHECK(Close(animator.layers[0].fades[2].fade, 0.4f) && Close(animator.layers[0].fades[1].fade, 0.8f));
         Animator::Update(scene, library, 1.0);
-        CHECK(animator.layerCount == 1);
+        CHECK(animator.layers[0].fadeCount == 1);
 
         // En l'air un instant (une marche d'escalier) : rien ne change ; plus longtemps (saut) : la chute.
         character.groundSpeed = 0.0f;
@@ -327,7 +425,7 @@ namespace {
         scene.Add<AnimatorComponent>(seated, AnimatorComponent{.graph = std::string(DefaultCharacterGraph)});
         Animator::Update(scene, library, 0.1);
         const auto& pilot = scene.Get<AnimatorComponent>(seated);
-        CHECK(pilot.layerCount == 1 && Close(Find(pilot, skeleton, "Assis").weight, 1.0f));
+        CHECK(pilot.layers[0].fadeCount == 1 && Close(Find(pilot, skeleton, "Assis").weight, 1.0f));
         // Il se lève : jouée une fois, arrêtée sur sa dernière image.
         scene.Get<CharacterComponent>(seated).seatState = SeatState::StandingUp;
         Animator::Update(scene, library, 3.0);
@@ -361,7 +459,7 @@ bool RunAnimationTests() {
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory);
-    const bool passed = RunLoadingTests(directory) && RunSamplingTests() && RunGraphParsingTests() && RunAnimatorTests();
+    const bool passed = RunLoadingTests(directory) && RunSamplingTests() && RunGraphParsingTests() && RunLayerParsingTests() && RunAnimatorTests() && RunLayerTests();
     std::filesystem::remove_all(directory, error);
     return passed;
 }

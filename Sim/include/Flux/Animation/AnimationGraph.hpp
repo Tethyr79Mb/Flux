@@ -9,9 +9,9 @@
 #include <vector>
 
 namespace Flux {
-    // Graphe d'animation (fichier .fluxanim, JSON) : des paramètres (nombres posés par le moteur et le jeu), des états
-    // qui jouent une animation ou un mélange de plusieurs, et des transitions de l'un à l'autre quand leurs conditions
-    // sont vraies. Le graphe décrit le comportement ; sa lecture pour une entité est dans AnimatorComponent
+    // Graphe d'animation (fichier .fluxanim, JSON) : des paramètres (nombres posés par le moteur et le jeu), et des
+    // couches (corps entier, puis par exemple le haut du corps qui vise) faites d'états qui jouent une animation ou un
+    // mélange de plusieurs, et de transitions de l'un à l'autre quand leurs conditions sont vraies. Le graphe décrit le comportement ; sa lecture pour une entité est dans AnimatorComponent
     // (Animator::Update).
     struct AnimationGraph
     {
@@ -68,15 +68,37 @@ namespace Flux {
             bool atEnd = false;
         };
 
-        std::vector<Parameter> parameters;
-        std::vector<State> states; // au moins un
-        std::vector<Transition> transitions;
-        int start = 0; // état du début
+        // États et transitions d'une couche.
+        struct StateMachine
+        {
+            std::vector<State> states; // au moins un
+            std::vector<Transition> transitions;
+            int start = 0; // état du début
 
-        // Indice du paramètre ou de l'état de ce nom, -1 s'il n'y en a pas.
+            // Indice de l'état de ce nom ou de cette étiquette, -1 s'il n'y en a pas.
+            FLUX_SIM_API int FindState(std::string_view name) const;
+            FLUX_SIM_API int FindTag(std::string_view tag) const;
+        };
+
+        // Couche : sa machine à états joue par-dessus les couches d'avant, sur les os de son masque (l'os mask et ses
+        // descendants ; vide : tout le corps), avec la part weight (paramètre weightParameter, borné à 0..1, ou 1),
+        // atteinte en douceur en fade secondes. La première couche est le corps entier, sans masque ni poids.
+        struct Layer : StateMachine
+        {
+            std::string name;
+            std::string mask;
+            int weightParameter = -1;
+            float weight = 1.0f; // sans paramètre
+            float fade = 0.25f;
+        };
+
+        static constexpr std::size_t MaxLayers = 4;
+
+        std::vector<Parameter> parameters;
+        std::vector<Layer> layers; // au moins une : le corps entier
+
+        // Indice du paramètre de ce nom, -1 s'il n'y en a pas.
         FLUX_SIM_API int FindParameter(std::string_view name) const;
-        FLUX_SIM_API int FindState(std::string_view name) const;
-        FLUX_SIM_API int FindTag(std::string_view tag) const;
     };
 
     // Paramètres que le moteur pose lui-même sur un personnage (CharacterComponent), s'ils sont déclarés par son graphe.

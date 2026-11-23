@@ -116,7 +116,7 @@ namespace Flux {
             return {};
         }
 
-        Result ReadState(const Json& entry, Graph& graph, Graph::State& state) {
+        Result ReadState(const Json& entry, const Graph& graph, Graph::State& state) {
             if (!entry.is_object()) {
                 return std::unexpected("un état est un objet { \"name\": ..., \"animation\": ... }");
             }
@@ -175,7 +175,7 @@ namespace Flux {
             return {};
         }
 
-        Result ReadTransition(const Json& entry, Graph& graph, Graph::Transition& transition) {
+        Result ReadTransition(const Json& entry, const Graph& graph, const Graph::StateMachine& machine, Graph::Transition& transition) {
             if (!entry.is_object()) {
                 return std::unexpected("une transition est un objet { \"to\": ..., \"when\": [...] }");
             }
@@ -188,11 +188,11 @@ namespace Flux {
                 }
             }
             const auto context = [&to](const std::string& error) { return std::unexpected(std::format("transition vers « {} » : {}", to, error)); };
-            transition.to = graph.FindState(to);
+            transition.to = machine.FindState(to);
             if (transition.to < 0) {
                 return context(to.empty() ? "« to » attendu" : "pas d'état de ce nom");
             }
-            transition.from = from.empty() || from == "*" ? -1 : graph.FindState(from);
+            transition.from = from.empty() || from == "*" ? -1 : machine.FindState(from);
             if (!from.empty() && from != "*" && transition.from < 0) {
                 return context(std::format("« from » : pas d'état « {} »", from));
             }
@@ -216,6 +216,70 @@ namespace Flux {
             }
             return {};
         }
+        // États, début et transitions d'une couche (à la racine du fichier pour le corps entier).
+        Result ReadMachine(const Json& object, const Graph& graph, Graph::StateMachine& machine) {
+            const auto states = object.find("states");
+            if (states == object.end() || !states->is_array() || states->empty()) {
+                return std::unexpected("« states » doit lister au moins un état");
+            }
+            for (const Json& entry : *states) {
+                Graph::State state;
+                if (auto read = ReadState(entry, graph, state); !read) {
+                    return read;
+                }
+                if (machine.FindState(state.name) >= 0) {
+                    return std::unexpected(std::format("deux états « {} »", state.name));
+                }
+                machine.states.push_back(std::move(state));
+            }
+            std::string start;
+            if (auto read = ReadText(object, "start", start); !read) {
+                return read;
+            }
+            machine.start = start.empty() ? 0 : machine.FindState(start);
+            if (machine.start < 0) {
+                return std::unexpected(std::format("« start » : pas d'état « {} »", start));
+            }
+            if (const auto transitions = object.find("transitions"); transitions != object.end()) {
+                if (!transitions->is_array()) {
+                    return std::unexpected("« transitions » doit être une liste");
+                }
+                for (const Json& entry : *transitions) {
+                    Graph::Transition transition;
+                    if (auto read = ReadTransition(entry, graph, machine, transition); !read) {
+                        return read;
+                    }
+                    machine.transitions.push_back(std::move(transition));
+                }
+            }
+            return {};
+        }
+
+        // Couche par-dessus le corps : { "name", "mask": "os", "weight": "paramètre" ou nombre, "fade", "states", ... }.
+        Result ReadLayer(const Json& entry, const Graph& graph, Graph::Layer& layer) {
+            if (!entry.is_object()) {
+                return std::unexpected("une couche est un objet { \"name\": ..., \"mask\": ..., \"states\": [...] }");
+            }
+            for (Result read : {ReadText(entry, "name", layer.name), ReadText(entry, "mask", layer.mask), ReadNumber(entry, "fade", layer.fade)}) {
+                if (!read) {
+                    return read;
+                }
+            }
+            layer.fade = std::max(layer.fade, 0.0f);
+            if (const auto weight = entry.find("weight"); weight != entry.end()) {
+                if (weight->is_number()) {
+                    layer.weight = std::clamp(weight->get<float>(), 0.0f, 1.0f);
+                } else if (weight->is_string()) {
+                    layer.weightParameter = graph.FindParameter(weight->get<std::string>());
+                    if (layer.weightParameter < 0) {
+                        return std::unexpected(std::format("« weight » : paramètre « {} » non déclaré", weight->get<std::string>()));
+                    }
+                } else {
+                    return std::unexpected("« weight » doit être un nombre (0 à 1) ou le nom d'un paramètre");
+                }
+            }
+            return ReadMachine(entry, graph, layer);
+        }
     }
 
     int AnimationGraph::FindParameter(std::string_view name) const {
@@ -223,12 +287,12 @@ namespace Flux {
         return found != parameters.end() ? static_cast<int>(found - parameters.begin()) : -1;
     }
 
-    int AnimationGraph::FindState(std::string_view name) const {
+    int AnimationGraph::StateMachine::FindState(std::string_view name) const {
         const auto found = std::ranges::find(states, name, &State::name);
         return found != states.end() ? static_cast<int>(found - states.begin()) : -1;
     }
 
-    int AnimationGraph::FindTag(std::string_view tag) const {
+    int AnimationGraph::StateMachine::FindTag(std::string_view tag) const {
         const auto found = std::ranges::find(states, tag, &State::tag);
         return !tag.empty() && found != states.end() ? static_cast<int>(found - states.begin()) : -1;
     }
@@ -242,38 +306,22 @@ namespace Flux {
         if (auto read = ReadParameters(document, graph); !read) {
             return std::unexpected(read.error());
         }
-        const auto states = document.find("states");
-        if (states == document.end() || !states->is_array() || states->empty()) {
-            return std::unexpected("« states » doit lister au moins un état");
-        }
-        for (const Json& entry : *states) {
-            AnimationGraph::State state;
-            if (auto read = ReadState(entry, graph, state); !read) {
-                return std::unexpected(read.error());
-            }
-            if (graph.FindState(state.name) >= 0) {
-                return std::unexpected(std::format("deux états « {} »", state.name));
-            }
-            graph.states.push_back(std::move(state));
-        }
-        std::string start;
-        if (auto read = ReadText(document, "start", start); !read) {
+        Graph::Layer body;
+        body.name = "Corps";
+        if (auto read = ReadMachine(document, graph, body); !read) {
             return std::unexpected(read.error());
         }
-        graph.start = start.empty() ? 0 : graph.FindState(start);
-        if (graph.start < 0) {
-            return std::unexpected(std::format("« start » : pas d'état « {} »", start));
-        }
-        if (const auto transitions = document.find("transitions"); transitions != document.end()) {
-            if (!transitions->is_array()) {
-                return std::unexpected("« transitions » doit être une liste");
+        graph.layers.push_back(std::move(body));
+        if (const auto layers = document.find("layers"); layers != document.end()) {
+            if (!layers->is_array() || layers->size() + 1 > Graph::MaxLayers) {
+                return std::unexpected(std::format("« layers » doit lister au plus {} couches par-dessus le corps", Graph::MaxLayers - 1));
             }
-            for (const Json& entry : *transitions) {
-                AnimationGraph::Transition transition;
-                if (auto read = ReadTransition(entry, graph, transition); !read) {
-                    return std::unexpected(read.error());
+            for (const Json& entry : *layers) {
+                Graph::Layer layer;
+                if (auto read = ReadLayer(entry, graph, layer); !read) {
+                    return std::unexpected(std::format("couche « {} » : {}", layer.name, read.error()));
                 }
-                graph.transitions.push_back(std::move(transition));
+                graph.layers.push_back(std::move(layer));
             }
         }
         return graph;

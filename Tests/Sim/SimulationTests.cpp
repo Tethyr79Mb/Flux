@@ -183,7 +183,10 @@ namespace {
         AnimatorComponent& animator = scene.Add<AnimatorComponent>(walker);
         animator.graph = std::string(DefaultCharacterGraph);
         // État du graphe joué en dernier (celui qui prend le dessus).
-        const auto playing = [&] { return graph->states[static_cast<std::size_t>(animator.layers[animator.layerCount - 1].state)].name; };
+        const auto playing = [&] {
+            const AnimatorLayer& body = animator.layers[0];
+            return graph->layers[0].states[static_cast<std::size_t>(body.fades[body.fadeCount - 1].state)].name;
+        };
         const double step = SimulationClock::StepSeconds;
         simulation.Step(step);
         CHECK(playing() == "Repos");
