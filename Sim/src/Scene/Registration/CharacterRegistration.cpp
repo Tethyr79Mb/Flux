@@ -61,5 +61,9 @@ namespace Flux {
             .ConvertedText("sitDownAnimation", toGraph)
             .ConvertedText("seatedAnimation", toGraph)
             .ConvertedText("standUpAnimation", toGraph);
+        registry.Register<BoneAttachmentComponent>("boneAttachment", "Accroché à un os")
+            .Field("bone", "Os", &BoneAttachmentComponent::bone)
+            .Field("position", "Décalage", &BoneAttachmentComponent::position, {.speed = 0.002})
+            .Field("rotation", "Rotation (°)", &BoneAttachmentComponent::rotation);
     }
 }

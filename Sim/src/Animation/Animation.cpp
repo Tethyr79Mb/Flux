@@ -126,6 +126,38 @@ namespace Flux {
         return result;
     }
 
+    // Rotation d'une matrice 3x3 orthonormée (colonnes x, y, z), méthode de Shepperd : on part de la plus
+    // grande composante, pour ne jamais diviser par un petit nombre.
+    Math::Quaternionf Math::RotationFromAxes(const Vector3f& x, const Vector3f& y, const Vector3f& z) {
+        const float trace = x.x + y.y + z.z;
+        Math::Quaternionf q;
+        if (trace > 0.0f) {
+            const float s = std::sqrt(trace + 1.0f) * 2.0f;
+            q = {(y.z - z.y) / s, (z.x - x.z) / s, (x.y - y.x) / s, 0.25f * s};
+        } else if (x.x > y.y && x.x > z.z) {
+            const float s = std::sqrt(1.0f + x.x - y.y - z.z) * 2.0f;
+            q = {0.25f * s, (y.x + x.y) / s, (z.x + x.z) / s, (y.z - z.y) / s};
+        } else if (y.y > z.z) {
+            const float s = std::sqrt(1.0f + y.y - x.x - z.z) * 2.0f;
+            q = {(y.x + x.y) / s, 0.25f * s, (z.y + y.z) / s, (z.x - x.z) / s};
+        } else {
+            const float s = std::sqrt(1.0f + z.z - x.x - y.y) * 2.0f;
+            q = {(z.x + x.z) / s, (z.y + y.z) / s, 0.25f * s, (x.y - y.x) / s};
+        }
+        return Math::Normalize(q);
+    }
+
+    NodePose DecomposeMatrix(const Math::Matrix4f& matrix) {
+        const auto axis = [&](int c) { return Vector3f{matrix.columns[c][0], matrix.columns[c][1], matrix.columns[c][2]}; };
+        NodePose pose;
+        pose.translation = axis(3);
+        pose.scale = {Math::Length(axis(0)), Math::Length(axis(1)), Math::Length(axis(2))};
+        if (pose.scale.x > 0.0f && pose.scale.y > 0.0f && pose.scale.z > 0.0f) {
+            pose.rotation = Math::RotationFromAxes(axis(0) / pose.scale.x, axis(1) / pose.scale.y, axis(2) / pose.scale.z);
+        }
+        return pose;
+    }
+
     Math::Matrix4f ComposeMatrix(const NodePose& pose) {
         const Vector3f x = pose.rotation.Rotate(Vector3f{pose.scale.x, 0.0f, 0.0f});
         const Vector3f y = pose.rotation.Rotate(Vector3f{0.0f, pose.scale.y, 0.0f});

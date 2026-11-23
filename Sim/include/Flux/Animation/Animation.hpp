@@ -78,4 +78,11 @@ namespace Flux {
 
     // Matrice d'une transformation : translation x rotation x échelle.
     FLUX_SIM_API Math::Matrix4f ComposeMatrix(const NodePose& pose);
+    // Translation, rotation et échelle d'une matrice sans cisaillement (celle d'un nœud).
+    FLUX_SIM_API NodePose DecomposeMatrix(const Math::Matrix4f& matrix);
+
+    namespace Math {
+        // Rotation d'une matrice 3x3 orthonormée (colonnes x, y, z).
+        FLUX_SIM_API Quaternionf RotationFromAxes(const Vector3f& x, const Vector3f& y, const Vector3f& z);
+    }
 }

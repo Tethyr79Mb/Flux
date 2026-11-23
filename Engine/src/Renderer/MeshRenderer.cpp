@@ -1,5 +1,6 @@
 #include "Renderer/MeshRenderer.hpp"
 
+#include "Flux/Animation/Animator.hpp"
 #include "Flux/Core/JobSystem.hpp"
 
 #include "Flux/Core/Log.hpp"
@@ -1663,28 +1664,7 @@ namespace Flux {
 
     // Pose d'un modèle animé, d'après les animations pondérées de son AnimatorComponent ; sans lui, la pose de repos.
     void MeshRenderer::Pose(const GpuModel& model, const AnimatorComponent* animator) {
-        const std::vector<ModelAnimation>& animations = model.skeleton.animations;
-        if (!animator || animator->clipCount == 0) {
-            // Rien de joué encore (éditeur, avant le premier pas) : la première image de l'animation choisie.
-            m_poseEvaluator.Evaluate(model.skeleton, AnimationSample{animator ? FindAnimation(model.skeleton, animator->animation) : nullptr, 0.0, false});
-            return;
-        }
-        // Mêmes indices que dans la simulation : le même fichier, lu de la même façon (AnimationLibrary).
-        std::array<AnimationSample, AnimatorComponent::MaxClips> samples;
-        std::size_t count = 0;
-        for (const AnimationClipWeight& clip : std::span(animator->clips).first(animator->clipCount)) {
-            if (clip.animation >= 0 && static_cast<std::size_t>(clip.animation) < animations.size()) {
-                samples[count++] = {&animations[static_cast<std::size_t>(clip.animation)], clip.time, clip.loop, clip.weight, clip.layer};
-            }
-        }
-        // Couches par-dessus le corps (haut du corps…) : l'os de leur masque, dans le même squelette.
-        std::array<PoseLayer, AnimatorComponent::MaxLayers - 1> layers;
-        std::size_t layerCount = 0;
-        for (std::size_t l = 1; l < animator->layerCount; ++l) {
-            const AnimatorLayer& layer = animator->layers[l];
-            layers[layerCount++] = {layer.maskNode, layer.maskNode >= -1 ? layer.weight : 0.0f};
-        }
-        m_poseEvaluator.EvaluateLayers(model.skeleton, std::span(samples).first(count), std::span(layers).first(layerCount));
+        Animator::Pose(m_poseEvaluator, model.skeleton, animator);
     }
 
     // Envoie au GPU les matrices des os (par colonnes comme jointColumns dans shaders/Mesh.slang), celles des entités
