@@ -88,6 +88,18 @@ namespace Flux {
         }
     }
 
+    int FindNode(const ModelSkeleton& skeleton, std::string_view name) {
+        const auto bare = [](std::string_view text) {
+            const std::size_t colon = text.rfind(':');
+            return colon == std::string_view::npos ? text : text.substr(colon + 1);
+        };
+        auto found = std::ranges::find(skeleton.nodes, name, &SkeletonNode::name);
+        if (found == skeleton.nodes.end() && !name.empty()) {
+            found = std::ranges::find_if(skeleton.nodes, [&](const SkeletonNode& node) { return bare(node.name) == bare(name); });
+        }
+        return found != skeleton.nodes.end() ? static_cast<int>(found - skeleton.nodes.begin()) : -1;
+    }
+
     const ModelAnimation* FindAnimation(const ModelSkeleton& skeleton, std::string_view name) {
         if (skeleton.animations.empty()) {
             return nullptr;

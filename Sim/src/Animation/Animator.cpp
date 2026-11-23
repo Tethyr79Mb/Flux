@@ -217,11 +217,6 @@ namespace Flux::Animator {
             layer.fades[0].fade = 1.0f;
         }
 
-        int FindNode(const ModelSkeleton& skeleton, std::string_view name) {
-            const auto found = std::ranges::find(skeleton.nodes, name, &SkeletonNode::name);
-            return found != skeleton.nodes.end() ? static_cast<int>(found - skeleton.nodes.begin()) : -1;
-        }
-
         // Os du masque d'une couche, -1 pour tout le corps, NoMask si l'os n'est pas dans ce squelette (couche coupée :
         // un masque mal nommé ne doit pas animer tout le corps).
         constexpr std::int16_t NoMask = -2;

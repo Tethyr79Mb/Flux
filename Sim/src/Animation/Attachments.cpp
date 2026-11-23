@@ -18,8 +18,8 @@ namespace Flux::Attachments {
             if (!skeleton) {
                 continue;
             }
-            const auto bone = std::ranges::find(skeleton->nodes, attachment.bone, &SkeletonNode::name);
-            if (bone == skeleton->nodes.end()) {
+            const int bone = FindNode(*skeleton, attachment.bone);
+            if (bone < 0) {
                 continue; // os mal nommé : l'objet reste où il est
             }
             if (parent != posed) {
@@ -28,7 +28,7 @@ namespace Flux::Attachments {
                 posed = parent;
             }
             // Le repère du modèle est celui de son entité : la transformation locale de l'enfant y est exprimée.
-            const NodePose node = DecomposeMatrix(evaluator.GetNodeMatrices()[static_cast<std::size_t>(bone - skeleton->nodes.begin())]);
+            const NodePose node = DecomposeMatrix(evaluator.GetNodeMatrices()[static_cast<std::size_t>(bone)]);
             transform.position = Math::Vector3d(node.translation + node.rotation.Rotate(attachment.position));
             transform.rotation = node.rotation * attachment.rotation;
         }

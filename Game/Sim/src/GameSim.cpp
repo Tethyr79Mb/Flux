@@ -3,6 +3,7 @@
 #include "Combat.hpp"
 #include "CombatAI.hpp"
 #include "Docking.hpp"
+#include "HandWeapons.hpp"
 #include "MissionGiver.hpp"
 #include "SpawnPoint.hpp"
 #include "Warp.hpp"
@@ -56,11 +57,12 @@ namespace Game {
         constexpr std::string_view SteerSystem = "Combat : pilotage des ennemis";
         constexpr std::string_view DamageSystem = "Armes : dégâts";
         constexpr std::string_view FireSystem = "Armes du joueur : tir";
+        constexpr std::string_view HandWeaponSystem = "Arme de poing : tir";
         constexpr std::string_view EnemyFireSystem = "Combat : tirs des ennemis";
         constexpr std::string_view SpinSystem = "Démo : rotations";
         constexpr std::string_view ResetSystem = "Jeu : oubli";
         constexpr std::array Systems{PilotSystem, MissionSystem, TravelSystem,    SteerSystem, DamageSystem,
-                                     FireSystem,  EnemyFireSystem, SpinSystem, ResetSystem};
+                                     FireSystem,  HandWeaponSystem, EnemyFireSystem, SpinSystem, ResetSystem};
     }
 
     PlayerStateComponent& GetPlayerState(Scene& scene, Entity player) {
@@ -89,12 +91,14 @@ namespace Game {
         RegisterCombatAI(components);
         RegisterMissionGiver(components);
         RegisterSpawnPoint(components);
+        HandWeapons::Register(components);
 
         auto state = std::make_shared<SimState>();
         CommandActions& actions = simulation.GetActions();
         state->pilot = Piloting::DeclareActions(actions);
         Navigation::DeclareActions(state->navigation, actions);
         PlayerWeapons::DeclareActions(state->weapons, actions);
+        state->handWeapons = HandWeapons::DeclareActions(actions);
 
         using Stage = Simulation::Stage;
         simulation.AddSystem(Stage::Interaction, std::string(PilotSystem),
@@ -109,12 +113,16 @@ namespace Game {
         simulation.AddSystem(Stage::AfterPhysics, std::string(DamageSystem), [state](Simulation& s, double) { Damage(s, *state); });
         simulation.AddSystem(Stage::AfterPhysics, std::string(FireSystem),
                              [state](Simulation& s, double dt) { PlayerWeapons::Fire(s, *state, dt); });
+        // Avant l'animation du pas (Simulation::Step) : armed, aiming et fire y sont lus tout de suite.
+        simulation.AddSystem(Stage::AfterPhysics, std::string(HandWeaponSystem),
+                             [state](Simulation& s, double dt) { HandWeapons::Update(s, state->handWeapons, dt); });
         simulation.AddSystem(Stage::AfterPhysics, std::string(EnemyFireSystem), Combat::Fire);
         simulation.AddSystem(Stage::AfterPhysics, std::string(SpinSystem),
                              [state](Simulation& s, double dt) { Spin(s, state->spinSpeed, dt); });
         simulation.AddSystem(Stage::Reset, std::string(ResetSystem), [state](Simulation& s, double) {
             s.GetScene().GetRegistry().clear<PlayerStateComponent>(); // missions, navigation et messages des joueurs
             PlayerWeapons::Reset(s.GetScene(), state->weapons);
+            HandWeapons::Reset(s.GetScene());
         });
         return state;
     }
@@ -125,6 +133,7 @@ namespace Game {
         }
         // Leurs types sont dans le module déchargé.
         simulation.GetScene().GetRegistry().clear<PilotWeaponsComponent>();
+        simulation.GetScene().GetRegistry().clear<HandWeaponStateComponent>();
         simulation.GetScene().GetRegistry().clear<PlayerStateComponent>();
     }
 }

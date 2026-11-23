@@ -1,5 +1,6 @@
 #include "Flux/Animation/AnimationLibrary.hpp"
 
+#include "Flux/Animation/Animation.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
@@ -10,10 +11,11 @@
 
 namespace Flux {
     namespace {
-        // Nom d'os sans l'espace de noms d'un logiciel (« mixamorig:Hips » : « Hips »).
-        std::string_view BareName(std::string_view name) {
-            const std::size_t colon = name.rfind(':');
-            return colon == std::string_view::npos ? name : name.substr(colon + 1);
+        // Nom d'un fichier sans son dossier ni son extension (« Animations/Mixamo/Viser.glb » : « Viser »).
+        std::string_view FileStem(std::string_view file) {
+            file = file.substr(file.find_last_of("/\\") + 1);
+            const std::size_t dot = file.rfind('.');
+            return dot == std::string_view::npos ? file : file.substr(0, dot);
         }
 
         // Fichier lu pour ses animations seules ; nullptr s'il ne peut servir (illisible : dit au journal).
@@ -40,15 +42,10 @@ namespace Flux {
     }
 
     std::vector<ModelAnimation> RetargetAnimations(const ModelSkeleton& source, const ModelSkeleton& target) {
-        // Nœud de target pour chaque nœud de source : même nom, sinon même nom sans espace de noms.
+        // Nœud de target pour chaque nœud de source, par nom.
         std::vector<int> nodes(source.nodes.size(), -1);
         for (std::size_t i = 0; i < source.nodes.size(); ++i) {
-            const std::string_view name = source.nodes[i].name;
-            auto found = std::ranges::find(target.nodes, name, &SkeletonNode::name);
-            if (found == target.nodes.end()) {
-                found = std::ranges::find_if(target.nodes, [&](const SkeletonNode& node) { return BareName(node.name) == BareName(name); });
-            }
-            nodes[i] = found != target.nodes.end() ? static_cast<int>(found - target.nodes.begin()) : -1;
+            nodes[i] = FindNode(target, source.nodes[i].name);
         }
         std::vector<ModelAnimation> animations;
         animations.reserve(source.animations.size());
@@ -135,6 +132,10 @@ namespace Flux {
                     continue;
                 }
                 std::vector<ModelAnimation> animations = RetargetAnimations(*source, *skeleton);
+                // Seule dans son fichier : nommée comme lui. Les exports de Mixamo s'appellent tous « mixamo.com ».
+                if (animations.size() == 1) {
+                    animations[0].name = FileStem(file);
+                }
                 std::ranges::move(animations, std::back_inserter(set->borrowed));
             }
         }

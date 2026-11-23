@@ -488,7 +488,7 @@ planète donne directement le sien comme indice d'instance.
   graphe du personnage est un asset du jeu (`Animations/Personnage.fluxanim`) ; le moteur ne pose que les paramètres
   d'un personnage (`AnimationParameters` : vitesse, allure, temps en l'air, siège), le jeu les siens
   (`Animator::SetParameter`). `"files"` ajoute aux animations du modèle celles d'autres fichiers du même squelette
-  (une animation Mixamo par fichier) : `RetargetAnimations` recâble leurs courbes sur les os du modèle par nom
+  (une animation Mixamo par fichier, qui prend le nom de son fichier) : `RetargetAnimations` recâble leurs courbes sur les os du modèle par nom
   (préfixe `mixamorig:` ignoré) ; un modèle et un graphe donnent un `AnimationSet`, dont les indices sont ceux des
   clips.
 - Simulation (FluxSim, aussi le serveur) : `AnimationLibrary` lit squelettes et graphes à la première demande
@@ -529,6 +529,10 @@ planète donne directement le sien comme indice d'instance.
   (`PhysicsWorld::CastRay` ; corps du tireur ignorés). La cible est l'entité touchée ou son ancêtre le plus proche
   qui a un `HealthComponent` ; à 0, elle est détruite avec ses enfants, et la physique retire ses corps à sa
   prochaine mise à jour (système du jeu « Armes : dégâts »). Le personnage du joueur protège ce qui le porte (fin de partie à venir).
+- Arme de poing (`Game::HandWeapons`, `HandWeaponComponent` sur le pistolet accroché à la main) : à pied, sortie
+  et rangée (1), visée (clic droit), un coup par clic gauche, de la bouche du canon vers le point à 25 m au centre de
+  la vue ; mêmes projectiles et dégâts. Le système pose `armed`, `aiming` et `fire` sur le graphe du personnage
+  avant l'animation du pas, et cache l'arme rangée (`ModelComponent::visible`).
 - Missiles : des `Projectile` marqués `missile`, avec une cible. Le verrouillage (`Weapons::FindLockTarget`) se
   fait à l'appui sur une touche de tir : la cible à points de vie la plus proche du centre de la vue, dans l'angle et
   la portée des armes montées (parcours de tous les `HealthComponent` : linéaire, peu nombreux). Il tient ensuite hors

@@ -97,8 +97,9 @@ namespace Flux {
         std::vector<Parameter> parameters;
         std::vector<Layer> layers; // au moins une : le corps entier
         // Fichiers dont les animations s'ajoutent à celles du modèle (chemins relatifs aux assets), par exemple une
-        // animation Mixamo par fichier : même squelette, os reconnus par leur nom. Un nom déjà pris est celui du
-        // modèle, puis du premier fichier qui l'a.
+        // animation Mixamo par fichier : même squelette, os reconnus par leur nom. L'animation seule dans son fichier
+        // prend le nom du fichier (Viser.glb : « Viser »). Un nom déjà pris est celui du modèle, puis du premier
+        // fichier qui l'a.
         std::vector<std::string> files;
 
         // Indice du paramètre de ce nom, -1 s'il n'y en a pas.

@@ -7,6 +7,7 @@ out/
 
 # Assets sous licence de Bruno, gardés hors du dépôt public
 Game/Module/assets/models/
+Game/Module/assets/Animations/Mixamo/
 Game/Module/assets/textures/vecteezy_*
 Game/Module/assets/scenes/*.avant-*
 

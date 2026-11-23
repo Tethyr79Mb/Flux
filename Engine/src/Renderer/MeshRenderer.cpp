@@ -1080,7 +1080,7 @@ namespace Flux {
                 draw.metallic = std::clamp(renderer->metallic, 0.0f, 1.0f);
                 draw.roughness = std::clamp(renderer->roughness, 0.0f, 1.0f);
             } else if (const auto* component = scene.TryGet<ModelComponent>(transform.entity);
-                       component && !component->model.empty() && !assetsDirectory.empty()) {
+                       component && component->visible && !component->model.empty() && !assetsDirectory.empty()) {
                 draw.model = m_models->Find(assetsDirectory, component->model);
                 if (!component->farModel.empty()) {
                     draw.farModel = m_models->Find(assetsDirectory, component->farModel);

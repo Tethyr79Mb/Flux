@@ -47,6 +47,10 @@ namespace {
         for (std::size_t group = 0; group < GroupKeys.size(); ++group) {
             actions.Add(std::string(PlayerWeapons::GroupActions[group]), "Vaisseau", GroupKeys[group]);
         }
+        // À pied, comme Star Citizen : 1 sort l'arme (aux commandes, la même touche est le groupe 1), clic droit vise.
+        actions.Add(std::string(HandWeapons::DrawAction), "À pied", Key::Digit1);
+        actions.Add(std::string(HandWeapons::AimAction), "À pied", Key::MouseRight);
+        actions.Add(std::string(HandWeapons::FireAction), "À pied", Key::MouseLeft);
     }
 
     void UnbindKeys(InputActions& actions) {
@@ -58,6 +62,9 @@ namespace {
         for (const std::string_view name : PlayerWeapons::GroupActions) {
             actions.Remove(name);
         }
+        actions.Remove(HandWeapons::DrawAction);
+        actions.Remove(HandWeapons::AimAction);
+        actions.Remove(HandWeapons::FireAction);
         actions.Remove(JumpAction);
     }
 

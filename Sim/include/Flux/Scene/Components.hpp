@@ -95,6 +95,8 @@ namespace Flux {
         // simplifie plus tôt (décor).
         bool automaticLod = true;
         float lodBias = 1.0f;
+        // Décoché : pas dessiné (arme rangée) ; son squelette et ses animations suivent toujours.
+        bool visible = true;
     };
 
     // Lumière de contour (« rim light ») : les bords de l'objet vus de profil s'éclairent de cette couleur, comme en

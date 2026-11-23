@@ -436,6 +436,19 @@ namespace {
         CHECK(set && set->animations.size() == 3 && set->Find("Marche") == 1 && set->Find("Repos") == 0 && set->Find("") == 0);
         CHECK(library.FindAnimationSet("soldat.glb", "soldat.fluxanim") == set);
         CHECK(library.GetAnimationSet("soldat.glb", "")->animations.size() == 1);
+        // Seule dans son fichier (export Mixamo, toujours nommée « mixamo.com ») : le nom du fichier.
+        ModelSkeleton single = file;
+        single.animations = {{"mixamo.com", 1.0f, {}}};
+        library.SetSkeleton("Animations/Mixamo/Viser.glb", single);
+        auto aimGraph = ParseAnimationGraph(R"({"files": ["Animations/Mixamo/Viser.glb"], "states": [{"name": "V", "animation": "Viser"}]})");
+        CHECK(aimGraph);
+        library.SetGraph("viser.fluxanim", std::move(*aimGraph));
+        set = library.GetAnimationSet("soldat.glb", "soldat.fluxanim"); // SetGraph a oublié les listes
+        const AnimationSet* aimSet = library.GetAnimationSet("soldat.glb", "viser.fluxanim");
+        CHECK(aimSet && aimSet->Find("Viser") == 1 && aimSet->Find("mixamo.com") < 0);
+        // Noms tapés à la main : sans le préfixe du logiciel.
+        CHECK(FindNode(file, "Spine") == 2 && FindNode(file, "mixamorig:Spine") == 2 && FindNode(model, "mixamorig:Hips") == 1);
+        CHECK(FindNode(model, "Queue") < 0);
 
         // L'animateur joue la marche du fichier : son clip est l'indice dans la liste, au-delà de celles du modèle.
         Scene scene;
@@ -537,7 +550,7 @@ namespace {
 
         // Paramètres posés par le jeu : seulement ceux que le graphe déclare.
         CHECK(Animator::SetParameter(scene.Get<AnimatorComponent>(hero), *graph, "airTime", 0.0f));
-        CHECK(!Animator::SetParameter(scene.Get<AnimatorComponent>(hero), *graph, "armed", 1.0f));
+        CHECK(!Animator::SetParameter(scene.Get<AnimatorComponent>(hero), *graph, "inconnu", 1.0f));
 
         // Objet qui n'est pas un personnage, sans graphe : son animation (la première) tourne à sa vitesse.
         const Entity door = scene.CreateEntity("Porte");
