@@ -49,6 +49,9 @@ namespace FluxEditor {
             if (type == AssetType::Species) {
                 return {{"Espèces Flux", ".espece.json"}, "Choisir une espèce", "Vegetation/Especes"};
             }
+            if (type == AssetType::AnimationGraph) {
+                return {{"Graphes d'animation Flux", ".fluxanim"}, "Choisir un graphe d'animation", "Animations"};
+            }
             return {{"Images", ".png;.jpg;.jpeg;.tga;.bmp"}, "Choisir une image", "textures"};
         }
 

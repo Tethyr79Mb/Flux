@@ -8,8 +8,10 @@
 
 #include <entt/entity/entity.hpp>
 
+#include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -586,33 +588,75 @@ namespace Flux {
         bool passThrough = false;
     };
 
+    // Un fondu en cours dans une couche d'un animateur : un état de son graphe, son cycle et sa part dans la pose.
+    struct AnimatorFade
+    {
+        std::int16_t state = -1; // dans la couche du graphe ; -1 : l'animation de l'animateur (sans graphe)
+        float phase = 0.0f;      // avancée de son cycle, de 0 à 1 (au-delà pour une animation bouclée)
+        float rate = 0.0f;       // cycles par seconde au dernier pas : gardée pendant qu'elle s'efface
+        float blend = 0.0f;      // valeur du paramètre de mélange au dernier pas, gardée de même
+        float fade = 1.0f;       // fondu d'entrée, de 0 à 1 : part prise sur les fondus d'avant
+        float fadeRate = 0.0f;   // avancée du fondu par seconde (1 / durée de la transition)
+    };
+
+    // Lecture d'une couche du graphe (corps entier, haut du corps…) : ses fondus en cours, du plus ancien au plus
+    // récent, et sa part sur les couches d'avant.
+    struct AnimatorLayer
+    {
+        static constexpr std::size_t MaxFades = 4; // au-delà, le plus ancien est lâché
+
+        std::array<AnimatorFade, MaxFades> fades{};
+        std::uint8_t fadeCount = 0;
+        float weight = 1.0f;         // part atteinte, de 0 à 1, en route vers celle du graphe
+        std::int16_t maskNode = -1;  // os de son masque dans ModelSkeleton::nodes ; -1 : tout le corps
+    };
+
+    // Animation d'un modèle et sa part dans sa couche, calculée par la simulation (Animator::Update) et appliquée au
+    // rendu.
+    struct AnimationClipWeight
+    {
+        std::int16_t animation = -1; // indice dans ModelSkeleton::animations
+        std::uint8_t layer = 0;      // couche de l'animateur
+        bool loop = true;
+        float time = 0.0f; // secondes
+        float weight = 0.0f;
+    };
+
     // Joue les animations du modèle de l'entité (ModelComponent) pendant le jeu ; dans l'éditeur, le modèle montre
-    // la première image de son animation. Sur un personnage (CharacterComponent), le choix suit ses pas : repos
-    // quand il est immobile, marche, puis course au-delà de la moitié entre ses vitesses de marche et de course,
-    // chacune jouée d'autant plus vite qu'il va vite, « en l'air » pendant un saut ou une chute, et sur un siège :
-    // s'asseoir (une fois), assis, se lever (une fois) ; fondu entre elles.
+    // la première image de son animation. Avec un graphe (.fluxanim), l'animation suit les états et les transitions
+    // du graphe, selon ses paramètres : ceux d'un personnage (vitesse, allure, temps en l'air, siège :
+    // AnimationParameters) sont posés par le moteur, les autres par le jeu. Sans graphe, l'animation choisie tourne.
+    // Graphe du personnage du jeu, donné aux animateurs des anciennes scènes (sept animations nommées, avant les graphes).
+    inline constexpr std::string_view DefaultCharacterGraph = "Animations/Personnage.fluxanim";
+
     struct AnimatorComponent
     {
-        std::string animation{};     // nom dans le fichier (marche d'un personnage) ; vide : la première
-        std::string idleAnimation{}; // personnage immobile ; vide : l'animation principale se fige
-        std::string runAnimation{};  // personnage qui court ; vide : l'animation principale, accélérée
-        std::string airAnimation{};  // personnage en l'air (saut, chute) ; vide : celle du sol continue
-        std::string sitDownAnimation{}; // personnage qui s'assoit, jouée une fois ; vide : assis d'un coup
-        std::string seatedAnimation{};  // personnage assis ; vide : celle du repos
-        std::string standUpAnimation{}; // personnage qui se lève, jouée une fois ; vide : debout d'un coup
-        float speed = 1.0f;          // vitesse de lecture (2 : deux fois plus vite)
-        bool loop = true;            // sinon, s'arrête sur sa dernière image
+        static constexpr std::size_t MaxLayers = 4;  // AnimationGraph::MaxLayers
+        static constexpr std::size_t MaxClips = 32;  // deux animations mélangées par fondu
 
-        // Lecture en cours (non enregistrée) : animation jouée et son instant, animation qui s'efface, fondu.
-        std::string playing{};
-        double time = 0.0;
-        double rate = 0.0;        // vitesse de lecture à la dernière image (celle du personnage)
-        bool playingOnce = false; // jouée une fois (s'asseoir, se lever), même si loop
-        std::string previous{};
-        double previousTime = 0.0;
-        double previousRate = 0.0; // gardée pendant le fondu : la marche qui s'efface ralentit avec le personnage
-        bool previousOnce = false;
-        float fade = 1.0f; // part de playing dans la pose, de 0 à 1
+        std::string graph{};     // fichier .fluxanim ; vide : seulement animation
+        std::string animation{}; // sans graphe : nom dans le fichier du modèle (vide : la première)
+        float speed = 1.0f;      // vitesse de lecture (2 : deux fois plus vite)
+        bool loop = true;        // sans graphe : sinon, s'arrête sur sa dernière image
+
+        // Lecture en cours (non enregistrée), couche par couche.
+        std::array<AnimatorLayer, MaxLayers> layers{};
+        std::uint8_t layerCount = 0;
+        std::array<float, 16> parameters{}; // valeurs des paramètres du graphe (AnimationGraph::MaxParameters)
+        bool started = false;               // paramètres et premiers états posés
+        // Sortie pour le rendu : animations pondérées, de somme 1 dans chaque couche, vide avant le premier pas.
+        std::array<AnimationClipWeight, MaxClips> clips{};
+        std::uint8_t clipCount = 0;
+    };
+
+    // Accroche l'entité à un os du modèle animé de son parent (arme dans la main, casque sur la tête) : à chaque pas
+    // du jeu, et dans l'éditeur sur la première image de l'animation, sa position et sa rotation suivent l'os, décalées
+    // de position et rotation dans le repère de l'os. Son échelle reste la sienne.
+    struct BoneAttachmentComponent
+    {
+        std::string bone{}; // nom du nœud dans le fichier du modèle du parent
+        Math::Vector3f position;
+        Math::Quaternionf rotation;
     };
 
     // Point de l'écran (ou de la vue de l'éditeur) auquel un élément d'interface est accroché.

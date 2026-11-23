@@ -1,5 +1,7 @@
 #include "Renderer/MeshRenderer.hpp"
 
+#include "Flux/Animation/AnimationLibrary.hpp"
+#include "Flux/Animation/Animator.hpp"
 #include "Flux/Core/JobSystem.hpp"
 
 #include "Flux/Core/Log.hpp"
@@ -15,6 +17,7 @@
 #include <cstddef>
 #include <format>
 #include <numbers>
+#include <array>
 #include <span>
 
 namespace Flux {
@@ -1140,7 +1143,7 @@ namespace Flux {
             const GpuModel& model = *draw.model;
             if (!model.skeleton.joints.empty()) {
                 const auto firstJoint = static_cast<std::uint32_t>(m_jointMatrices.size());
-                Pose(model, scene.TryGet<AnimatorComponent>(draw.transform->entity));
+                Pose(model, scene, draw.transform->entity);
                 const std::span<const Math::Matrix4f> joints = m_poseEvaluator.GetJointMatrices();
                 m_jointMatrices.insert(m_jointMatrices.end(), joints.begin(), joints.end());
                 draw.data.normal[1][3] = std::bit_cast<float>(firstJoint);
@@ -1661,22 +1664,14 @@ namespace Flux {
         return material.blend || draw.tint.a < 1.0f;
     }
 
-    // Pose d'un modèle animé, d'après la lecture de son AnimatorComponent ; sans lui, la pose de repos.
-    // Avant le jeu (rien de joué encore), la première image de l'animation choisie.
-    void MeshRenderer::Pose(const GpuModel& model, const AnimatorComponent* animator) {
-        if (!animator) {
-            m_poseEvaluator.Evaluate(model.skeleton, {});
-            return;
-        }
-        const std::string& playing = animator->playing.empty() ? animator->animation : animator->playing;
-        const AnimationSample to{FindAnimation(model.skeleton, playing), animator->time, animator->loop && !animator->playingOnce};
-        if (animator->fade >= 1.0f) {
-            m_poseEvaluator.Evaluate(model.skeleton, to);
-            return;
-        }
-        const AnimationSample from{FindAnimation(model.skeleton, animator->previous), animator->previousTime,
-                                   animator->loop && !animator->previousOnce};
-        m_poseEvaluator.Evaluate(model.skeleton, from, to, animator->fade);
+    // Pose d'un modèle animé, d'après les animations pondérées de son AnimatorComponent ; sans lui, la pose de repos.
+    // Les animations venues des fichiers du graphe sont celles que la simulation a lues (rien n'est lu ici).
+    void MeshRenderer::Pose(const GpuModel& model, const Scene& scene, Entity entity) {
+        const auto* animator = scene.TryGet<AnimatorComponent>(entity);
+        const auto* component = scene.TryGet<ModelComponent>(entity);
+        const AnimationSet* set = m_animations && animator && component ? m_animations->FindAnimationSet(component->model, animator->graph)
+                                                                        : nullptr;
+        Animator::Pose(m_poseEvaluator, model.skeleton, set, animator);
     }
 
     // Envoie au GPU les matrices des os (par colonnes comme jointColumns dans shaders/Mesh.slang), celles des entités

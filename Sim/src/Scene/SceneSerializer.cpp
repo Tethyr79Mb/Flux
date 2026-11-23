@@ -543,22 +543,34 @@ namespace Flux::SceneSerializer {
         }
 
         // Anciens champs à convertir (ComponentInfo::convertedFields), gardés jusqu'à la fin du composant.
-        using ConvertedValues = std::vector<std::pair<const ComponentInfo::ConvertedField*, double>>;
+        struct ConvertedValue
+        {
+            const ComponentInfo::ConvertedField* field;
+            double number;
+            std::string text;
+        };
+        using ConvertedValues = std::vector<ConvertedValue>;
 
         bool KeepConverted(const ComponentInfo& info, const std::string& fieldKey, const Json& value, ConvertedValues& converted) {
             const ComponentInfo::ConvertedField* field = info.FindConvertedField(fieldKey);
             if (!field) {
                 return false;
             }
-            if (value.is_number()) {
-                converted.emplace_back(field, value.get<double>());
+            if (value.is_number() && field->convert) {
+                converted.push_back({field, value.get<double>(), {}});
+            } else if (value.is_string() && field->convertText) {
+                converted.push_back({field, 0.0, value.get<std::string>()});
             }
             return true;
         }
 
         void ApplyConverted(const ConvertedValues& converted, void* instance) {
-            for (const auto& [field, value] : converted) {
-                field->convert(instance, value);
+            for (const ConvertedValue& value : converted) {
+                if (value.field->convert) {
+                    value.field->convert(instance, value.number);
+                } else {
+                    value.field->convertText(instance, value.text);
+                }
             }
         }
 

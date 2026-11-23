@@ -148,6 +148,7 @@ namespace Flux {
         std::uint32_t framesSinceSwitch = 0;
         // Anticrénelage : numéro de l'image (décalage, bruits) et caméra de l'image précédente.
         std::uint32_t temporalFrame = 0;
+        std::uint32_t presentedFrame = 0; // tramage de l'image finale : un bruit neuf à chaque image, anticrénelage ou non
         bool hasPrevious = false;
         float previousPreExposure = 1.0f; // de la dernière image où la scène a été dessinée (historiques)
         Math::Matrix4f previousViewProjection;
@@ -164,6 +165,7 @@ namespace Flux {
         struct FrameState
         {
             std::uint32_t index = 0;
+            std::uint32_t serial = 0; // presentedFrame de cette image
             RHI::Rect scene3d;
             RHI::Extent render; // taille de rendu
             float exposure = 1.0f;
@@ -364,6 +366,7 @@ namespace Flux {
             recordStart = Clock::now();
             timings.prepare = Milliseconds(recordStart - prepareStart);
             frame.index = frameIndex;
+            frame.serial = ++presentedFrame;
             frame.upscale.nearPlane = camera.nearPlane;
             frame.upscale.verticalFov = camera.verticalFov;
             graph.Execute(device->GetCommandList(), std::exchange(detailedTimings, false), workersActive ? jobs : nullptr);
@@ -1135,7 +1138,7 @@ namespace Flux {
                     commands.SetViewport({static_cast<float>(frame.scene3d.x), static_cast<float>(frame.scene3d.y),
                                           static_cast<float>(frame.scene3d.width), static_cast<float>(frame.scene3d.height)});
                     commands.SetScissor(frame.scene3d);
-                    post->Composite(commands, bloom, frame.exposure / frame.preExposure);
+                    post->Composite(commands, bloom, frame.exposure / frame.preExposure, frame.serial);
                 }, scene)
                 // Même viewport que la scène.
                 .Step("grille", [this](RHI::CommandList& commands) { post->DrawGrid(commands, frame.gridParams); },
@@ -1266,6 +1269,10 @@ namespace Flux {
 
     void Renderer::SetThrusterPreview(bool preview) {
         m_impl->meshes->SetThrusterPreview(preview);
+    }
+
+    void Renderer::SetAnimations(const AnimationLibrary* animations) {
+        m_impl->meshes->SetAnimations(animations);
     }
 
     void Renderer::SetProjectiles(std::span<const Projectile> projectiles, std::span<const Impact> impacts) {
@@ -1507,12 +1514,6 @@ namespace Flux {
             }
         }
         return names;
-    }
-
-    float Renderer::GetAnimationDuration(const std::filesystem::path& path, std::string_view name) {
-        const GpuModel* model = m_impl->meshes->GetModels().Find(path);
-        const ModelAnimation* animation = model ? FindAnimation(model->skeleton, name) : nullptr;
-        return animation ? animation->duration : 0.0f;
     }
 
     bool Renderer::RequestCapture() {

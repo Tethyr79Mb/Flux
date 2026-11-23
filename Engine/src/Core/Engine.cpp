@@ -100,6 +100,7 @@ namespace Flux {
         }
         m_renderer = std::move(renderer.value());
         m_renderer->SetJobSystem(m_jobs.get());
+        m_renderer->SetAnimations(&m_simulation.GetAnimations());
         m_renderer->SetVSync(config.vsync);
         m_renderer->SetSwapchainImages(config.swapchainImages);
         m_renderer->SetTemporalAA(config.temporalAA);
@@ -111,10 +112,6 @@ namespace Flux {
         m_renderer->SetModelDetail(config.modelDetail);
         m_renderer->SetAmbientOcclusion(config.ambientOcclusion);
         m_renderer->SetBloom(config.bloom ? Renderer::DefaultBloom : 0.0f);
-        // Les modèles sont chargés par le rendu : la simulation y lit la durée des animations des sièges.
-        m_simulation.SetAnimationDurations([renderer = m_renderer.get()](const std::filesystem::path& model, const std::string& animation) {
-            return renderer->GetAnimationDuration(model, animation);
-        });
         m_audio->SetMasterVolume(std::clamp(config.volume, 0.0f, 1.0f));
         m_ui = std::make_unique<UI::Context>(m_renderer->GetOverlay().GetFont());
         m_ui->SetColorPicker([window = m_window.get()](Math::LinearColor& color) {
@@ -525,6 +522,9 @@ namespace Flux {
                 m_editorUpdate(*this, deltaSeconds);
             }
             Orbits::Update(GetScene()); // après l'inspecteur : une orbite changée place la planète dès cette image
+            if (m_gameState == GameState::Stopped) {
+                m_simulation.UpdateAttachments(); // éditeur : l'arme reste dans la main quand on règle son décalage
+            }
             // Après les mises à jour (la scène de cette frame), sous les panneaux (ajoutés par EndFrame).
             // HUD sous les interfaces de la scène (menus, inventaire) ; rien sous un menu opaque plein écran, connu à
             // l'image précédente (les interfaces sont dessinées après).

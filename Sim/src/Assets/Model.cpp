@@ -92,27 +92,6 @@ namespace Flux {
                  + m[8] * (m[1] * m[6] - m[5] * m[2]);
         }
 
-        // Rotation d'une matrice 3x3 orthonormée (colonnes x, y, z), méthode de Shepperd : on part de la plus
-        // grande composante, pour ne jamais diviser par un petit nombre.
-        Math::Quaternionf RotationFromAxes(const Vector3f& x, const Vector3f& y, const Vector3f& z) {
-            const float trace = x.x + y.y + z.z;
-            Math::Quaternionf q;
-            if (trace > 0.0f) {
-                const float s = std::sqrt(trace + 1.0f) * 2.0f;
-                q = {(y.z - z.y) / s, (z.x - x.z) / s, (x.y - y.x) / s, 0.25f * s};
-            } else if (x.x > y.y && x.x > z.z) {
-                const float s = std::sqrt(1.0f + x.x - y.y - z.z) * 2.0f;
-                q = {0.25f * s, (y.x + x.y) / s, (z.x + x.z) / s, (y.z - z.y) / s};
-            } else if (y.y > z.z) {
-                const float s = std::sqrt(1.0f + y.y - x.x - z.z) * 2.0f;
-                q = {(y.x + x.y) / s, 0.25f * s, (z.y + y.z) / s, (z.x - x.z) / s};
-            } else {
-                const float s = std::sqrt(1.0f + z.z - x.x - y.y) * 2.0f;
-                q = {(z.x + x.z) / s, (z.y + y.z) / s, 0.25f * s, (x.y - y.x) / s};
-            }
-            return Math::Normalize(q);
-        }
-
         // Pose de repos d'un nœud : ses translation, rotation et échelle, ou sa matrice décomposée (sans
         // cisaillement, que glTF interdit de toute façon pour un nœud animé).
         SkeletonNode RestPose(const cgltf_node& node) {
@@ -130,7 +109,7 @@ namespace Flux {
                     rest.scale.x = -rest.scale.x; // symétrie : portée par l'échelle, la rotation reste propre
                 }
                 if (rest.scale.x != 0.0f && rest.scale.y != 0.0f && rest.scale.z != 0.0f) {
-                    rest.rotation = RotationFromAxes(x / rest.scale.x, y / rest.scale.y, z / rest.scale.z);
+                    rest.rotation = Math::RotationFromAxes(x / rest.scale.x, y / rest.scale.y, z / rest.scale.z);
                 }
                 return rest;
             }

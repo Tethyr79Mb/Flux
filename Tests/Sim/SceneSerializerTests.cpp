@@ -284,6 +284,15 @@ bool RunSceneSerializerTests() {
     const std::string converted = SceneSerializer::SaveToString(loaded, engineOnly);
     CHECK(converted.find("sandLevel") == std::string::npos && converted.find("beachHeight") != std::string::npos);
 
+    // Ancien animateur à sept animations nommées (avant les graphes) : le graphe du personnage du jeu ; une animation
+    // seule (une porte) reste sans graphe.
+    CHECK(SceneSerializer::LoadFromString(loaded, engineOnly, R"({"format": "flux.scene", "version": 2, "entities": [
+        {"id": "00000000000000e0", "animator": {"animation": "Marche", "idleAnimation": "Repos", "runAnimation": "Course", "speed": 1.5}},
+        {"id": "00000000000000e1", "animator": {"animation": "Ouverture"}}]})").has_value());
+    const AnimatorComponent* oldAnimator = loaded.TryGet<AnimatorComponent>(loaded.FindById(Uuid{0xe0}));
+    CHECK(oldAnimator && oldAnimator->graph == DefaultCharacterGraph && oldAnimator->speed == 1.5f);
+    CHECK(loaded.TryGet<AnimatorComponent>(loaded.FindById(Uuid{0xe1}))->graph.empty());
+
     // Unités physiques : le soleil d'avant (1 : 80 000 lux) en lux, le fond en cd/m², les émissifs (1 : 1000 cd/m²),
     // la lumière des réacteurs en lumens ; les lampes et l'ambiance des intérieurs reprennent une valeur réelle.
     CHECK(SceneSerializer::LoadFromString(loaded, engineOnly, R"({"format": "flux.scene", "version": 2, "entities": [

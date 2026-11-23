@@ -3,6 +3,7 @@
 #include "Flux/Platform/Filesystem.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 namespace Flux {
@@ -324,11 +325,12 @@ namespace Flux {
         commands.Use(*result, RHI::TextureAccess::Sampled);
     }
 
-    void PostRenderer::Composite(RHI::CommandList& commands, float strength, float exposure) const {
+    void PostRenderer::Composite(RHI::CommandList& commands, float strength, float exposure, std::uint32_t frameSerial) const {
         commands.BindPipeline(*m_composite);
         commands.SetBindGroup(0, *m_compositeGroups[m_output]);
         const float levels = static_cast<float>(std::max(m_levels, 1u));
-        const PostParams params{{}, {m_bloomDrawn ? strength : 0.0f, exposure, 1.0f / levels, 0.0f}};
+        const PostParams params{{}, {m_bloomDrawn ? strength : 0.0f, exposure, 1.0f / levels,
+                                                 std::bit_cast<float>(frameSerial)}};
         commands.PushConstants(&params, sizeof(params));
         commands.Draw(3, 0);
     }

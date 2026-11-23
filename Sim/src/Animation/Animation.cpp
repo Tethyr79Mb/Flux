@@ -10,10 +10,6 @@ namespace Flux {
         using Math::Vector3f;
         using Math::Slerp;
 
-        Vector3f Lerp(const Vector3f& a, const Vector3f& b, float t) {
-            return a + (b - a) * t;
-        }
-
         // Valeur k (composantes components) d'une courbe ; CubicSpline : element 0 tangente d'entrée, 1 valeur,
         // 2 tangente de sortie.
         struct Keys
@@ -130,6 +126,38 @@ namespace Flux {
         return result;
     }
 
+    // Rotation d'une matrice 3x3 orthonormée (colonnes x, y, z), méthode de Shepperd : on part de la plus
+    // grande composante, pour ne jamais diviser par un petit nombre.
+    Math::Quaternionf Math::RotationFromAxes(const Vector3f& x, const Vector3f& y, const Vector3f& z) {
+        const float trace = x.x + y.y + z.z;
+        Math::Quaternionf q;
+        if (trace > 0.0f) {
+            const float s = std::sqrt(trace + 1.0f) * 2.0f;
+            q = {(y.z - z.y) / s, (z.x - x.z) / s, (x.y - y.x) / s, 0.25f * s};
+        } else if (x.x > y.y && x.x > z.z) {
+            const float s = std::sqrt(1.0f + x.x - y.y - z.z) * 2.0f;
+            q = {0.25f * s, (y.x + x.y) / s, (z.x + x.z) / s, (y.z - z.y) / s};
+        } else if (y.y > z.z) {
+            const float s = std::sqrt(1.0f + y.y - x.x - z.z) * 2.0f;
+            q = {(y.x + x.y) / s, 0.25f * s, (z.y + y.z) / s, (z.x - x.z) / s};
+        } else {
+            const float s = std::sqrt(1.0f + z.z - x.x - y.y) * 2.0f;
+            q = {(z.x + x.z) / s, (z.y + y.z) / s, 0.25f * s, (x.y - y.x) / s};
+        }
+        return Math::Normalize(q);
+    }
+
+    NodePose DecomposeMatrix(const Math::Matrix4f& matrix) {
+        const auto axis = [&](int c) { return Vector3f{matrix.columns[c][0], matrix.columns[c][1], matrix.columns[c][2]}; };
+        NodePose pose;
+        pose.translation = axis(3);
+        pose.scale = {Math::Length(axis(0)), Math::Length(axis(1)), Math::Length(axis(2))};
+        if (pose.scale.x > 0.0f && pose.scale.y > 0.0f && pose.scale.z > 0.0f) {
+            pose.rotation = Math::RotationFromAxes(axis(0) / pose.scale.x, axis(1) / pose.scale.y, axis(2) / pose.scale.z);
+        }
+        return pose;
+    }
+
     Math::Matrix4f ComposeMatrix(const NodePose& pose) {
         const Vector3f x = pose.rotation.Rotate(Vector3f{pose.scale.x, 0.0f, 0.0f});
         const Vector3f y = pose.rotation.Rotate(Vector3f{0.0f, pose.scale.y, 0.0f});
@@ -179,19 +207,79 @@ namespace Flux {
         }
     }
 
-    void PoseEvaluator::Evaluate(const ModelSkeleton& skeleton, const AnimationSample& from, const AnimationSample& to,
-                                 float weight) {
+    namespace {
+        // Mélange des échantillons de la couche layer dans poses (sample : de quoi échantillonner) ; faux si aucun n'a
+        // de part, poses étant alors la pose de repos.
+        bool BlendLayer(const ModelSkeleton& skeleton, std::span<const AnimationSample> samples, std::uint8_t layer,
+                        std::vector<NodePose>& poses, std::vector<NodePose>& sample) {
+            const std::size_t nodeCount = skeleton.nodes.size();
+            float total = 0.0f;
+            std::size_t count = 0;
+            const AnimationSample* only = nullptr;
+            for (const AnimationSample& candidate : samples) {
+                if (candidate.layer == layer && candidate.weight > 0.0f) {
+                    total += candidate.weight;
+                    only = &candidate;
+                    ++count;
+                }
+            }
+            if (count <= 1) {
+                SamplePose(skeleton, only ? *only : AnimationSample{}, poses);
+                return only != nullptr;
+            }
+            // Somme pondérée, rotations ramenées dans le même hémisphère que la première (q et -q sont la même
+            // rotation), puis normalisées : assez juste entre poses voisines, sans dépendre de l'ordre des parts.
+            poses.assign(nodeCount, NodePose{{}, {0.0f, 0.0f, 0.0f, 0.0f}, {}});
+            bool first = true;
+            for (const AnimationSample& candidate : samples) {
+                if (candidate.layer != layer || candidate.weight <= 0.0f) {
+                    continue;
+                }
+                const float weight = candidate.weight / total;
+                SamplePose(skeleton, candidate, sample);
+                for (std::size_t n = 0; n < nodeCount; ++n) {
+                    NodePose& pose = poses[n];
+                    const NodePose& add = sample[n];
+                    pose.translation = pose.translation + add.translation * weight;
+                    pose.scale = pose.scale + add.scale * weight;
+                    const float sign = !first && Math::Dot(pose.rotation, add.rotation) < 0.0f ? -weight : weight;
+                    const Quaternionf& q = add.rotation;
+                    pose.rotation = {pose.rotation.x + q.x * sign, pose.rotation.y + q.y * sign, pose.rotation.z + q.z * sign,
+                                     pose.rotation.w + q.w * sign};
+                }
+                first = false;
+            }
+            for (NodePose& pose : poses) {
+                pose.rotation = Math::Normalize(pose.rotation);
+            }
+            return true;
+        }
+    }
+
+    void PoseEvaluator::EvaluateLayers(const ModelSkeleton& skeleton, std::span<const AnimationSample> samples,
+                                       std::span<const PoseLayer> layers) {
         const std::size_t nodeCount = skeleton.nodes.size();
-        weight = std::clamp(weight, 0.0f, 1.0f);
-        SamplePose(skeleton, to, m_poses);
-        if (weight < 1.0f) {
-            SamplePose(skeleton, from, m_from);
+        BlendLayer(skeleton, samples, 0, m_poses, m_sample);
+        for (std::size_t l = 0; l < layers.size(); ++l) {
+            const PoseLayer& layer = layers[l];
+            const float weight = std::clamp(layer.weight, 0.0f, 1.0f);
+            if (weight <= 0.0f || layer.node >= static_cast<int>(nodeCount)
+                || !BlendLayer(skeleton, samples, static_cast<std::uint8_t>(l + 1), m_layer, m_sample)) {
+                continue;
+            }
+            // Os du masque : le nœud et ses descendants (parents avant enfants : un seul passage).
+            m_masked.assign(nodeCount, 0);
             for (std::size_t n = 0; n < nodeCount; ++n) {
+                const int parent = skeleton.nodes[n].parent;
+                m_masked[n] = layer.node < 0 || static_cast<int>(n) == layer.node || (parent >= 0 && m_masked[static_cast<std::size_t>(parent)]);
+                if (!m_masked[n]) {
+                    continue;
+                }
                 NodePose& pose = m_poses[n];
-                const NodePose& start = m_from[n];
-                pose.translation = Lerp(start.translation, pose.translation, weight);
-                pose.rotation = Slerp(start.rotation, pose.rotation, weight);
-                pose.scale = Lerp(start.scale, pose.scale, weight);
+                const NodePose& over = m_layer[n];
+                pose.translation = pose.translation + (over.translation - pose.translation) * weight;
+                pose.scale = pose.scale + (over.scale - pose.scale) * weight;
+                pose.rotation = Math::Slerp(pose.rotation, over.rotation, weight);
             }
         }
 

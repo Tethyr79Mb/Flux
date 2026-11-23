@@ -49,6 +49,7 @@ namespace Flux {
         Font, // .ttf, .otf (rangées dans Polices/), choisie dans une liste
         Biome, // .biome.json (végétation des planètes)
         Species, // .espece.json (espèce d'arbre d'un biome)
+        AnimationGraph, // .fluxanim
     };
 
     // Réglages d'édition d'un champ numérique (inspecteur).
@@ -108,11 +109,13 @@ namespace Flux {
         // encore ; un autre champ inconnu reste une erreur (faute de frappe dans un fichier écrit à la main).
         std::vector<std::string> removedFields;
         // Champs remplacés par un autre de sens différent (clé, conversion) : la valeur lue dans une ancienne scène
-        // (un nombre) est convertie vers les nouveaux champs, une fois tous les autres champs du composant lus.
+        // (un nombre, ou un texte pour convertText) est convertie vers les nouveaux champs, une fois tous les autres
+        // champs du composant lus.
         struct ConvertedField
         {
             std::string key;
             std::function<void(void* instance, double oldValue)> convert;
+            std::function<void(void* instance, const std::string& oldValue)> convertText;
         };
         std::vector<ConvertedField> convertedFields;
 
@@ -275,7 +278,15 @@ namespace Flux {
         // champs, qui ont alors leur valeur lue (ou par défaut).
         ComponentBuilder& ConvertedField(std::string key, std::function<void(C&, double)> convert) {
             m_info->convertedFields.push_back(
-                {std::move(key), [convert = std::move(convert)](void* instance, double value) { convert(*static_cast<C*>(instance), value); }});
+                {std::move(key), [convert = std::move(convert)](void* instance, double value) { convert(*static_cast<C*>(instance), value); }, {}});
+            return *this;
+        }
+
+        // Même chose pour un ancien champ texte.
+        ComponentBuilder& ConvertedText(std::string key, std::function<void(C&, const std::string&)> convert) {
+            m_info->convertedFields.push_back({std::move(key), {}, [convert = std::move(convert)](void* instance, const std::string& value) {
+                                                   convert(*static_cast<C*>(instance), value);
+                                               }});
             return *this;
         }
 

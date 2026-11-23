@@ -106,6 +106,10 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ⬜ Création de sons (`.fluxsound`) : couches, variantes au hasard, réglages pilotés par le jeu, générateur de bruitages.
 - ⬜ (Optionnel) Musique dynamique ; composition dans un logiciel externe (Reaper, LMMS).
 
+### Animation (Bruno, 2026-11-22)
+- 🔧 Graphe d'animation choisi dans l'inspecteur (champ « Graphe » de l'Animation, fichiers `.fluxanim`). À améliorer : le graphe s'écrit à la main dans son fichier.
+- ⬜ Panneau du graphe d'animation : états et transitions en nœuds, aperçu du personnage, paramètres réglables pendant l'aperçu ; même widget de nœuds que le graphe de missions.
+
 ### Missions (Bruno, 2026-11-08 ; après le multijoueur)
 - ⬜ Éditeur de graphe de nœuds (étapes, déclencheurs, conditions, récompenses), enregistré en `.fluxmission` (JSON) ; nœuds déclarés par le jeu.
 

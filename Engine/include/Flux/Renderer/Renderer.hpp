@@ -34,6 +34,7 @@ namespace Flux {
     class Scene;
     struct Projectile;
     struct Impact;
+    class AnimationLibrary;
 
     // Temps du GPU d'une passe du rendu (step false) ou d'une de ses étapes, en millisecondes ; négatif si inconnu.
     // Pour une passe, aussi le temps CPU de son enregistrement (moyenne glissante), sur le fil qui l'a faite.
@@ -154,6 +155,9 @@ namespace Flux {
         // Projectiles à dessiner en traçantes, et éclats d'impact, aux prochains Render (Projectiles). Les tableaux
         // ne sont pas copiés : ils doivent rester valides jusqu'au prochain appel (vides : rien).
         void SetProjectiles(std::span<const Projectile> projectiles, std::span<const Impact> impacts = {});
+        // Animations lues par la simulation (celles venues des fichiers des graphes), pour poser les personnages ;
+        // doit vivre plus longtemps que le rendu, ou être remise à nullptr.
+        void SetAnimations(const AnimationLibrary* animations);
 
         // V-Sync (activée par défaut) : sans elle, autant d'images que le GPU peut en produire.
         // Le changement prend effet à la frame suivante (la swapchain est recréée).
@@ -273,8 +277,6 @@ namespace Flux {
         std::optional<Math::Box3f> LoadModel(const std::filesystem::path& path);
         // Noms des animations du modèle, dans l'ordre du fichier (chargé au besoin) ; vide s'il n'en a pas.
         std::vector<std::string> GetAnimationNames(const std::filesystem::path& path);
-        // Durée d'une animation de ce modèle, en secondes ; 0 si le modèle n'est pas chargé ou ne l'a pas.
-        float GetAnimationDuration(const std::filesystem::path& path, std::string_view name);
 
         const RenderTimings& GetTimings() const;
         // Temps du GPU étape par étape pour la prochaine image : à demander à chaque image où on les affiche (panneau

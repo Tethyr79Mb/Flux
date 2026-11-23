@@ -32,6 +32,7 @@ namespace Flux {
     struct Camera;
     class ViewCone;
     class JobSystem;
+    class AnimationLibrary;
 
     // Maillages de la scène (cubes et modèles glTF, animés ou non) : préparés sur le CPU pour chaque image
     // (matrices relatives à la caméra, poses des squelettes, cascades d'ombres), dessinés d'abord vus du soleil dans
@@ -73,6 +74,8 @@ namespace Flux {
         std::span<const ThrusterDraw> GetThrusters() const { return m_thrusters; }
         // Voir Renderer::SetThrusterPreview.
         void SetThrusterPreview(bool preview) { m_thrusterPreview = preview; }
+        // Voir Renderer::SetAnimations.
+        void SetAnimations(const AnimationLibrary* animations) { m_animations = animations; }
 
         // Fils qui calculent les entités pendant Prepare (positions, champ, matrices) ; nul : tout sur le fil appelant.
         void SetJobSystem(JobSystem* jobs) { m_jobs = jobs; }
@@ -492,7 +495,7 @@ namespace Flux {
                          const ThrusterComponent& thruster);
         void ClearDraws();
         bool BuildTileCommands(std::uint32_t frameIndex);
-        void Pose(const GpuModel& model, const AnimatorComponent* animator);
+        void Pose(const GpuModel& model, const Scene& scene, Entity entity);
         void Upload(const Camera& camera, float aspect, const SkyLighting& sky, const TemporalView& temporal, std::uint32_t frameIndex);
         static bool IsTransparent(const MeshDraw& draw, const GpuMaterial& material);
         // Choisit les cascades à redessiner ; les autres gardent leur carte de l'image d'avant, recalée sur la caméra.
@@ -705,6 +708,7 @@ namespace Flux {
         std::vector<PreparedInterior> m_interiors;
         std::vector<ThrusterDraw> m_thrusters;
         bool m_thrusterPreview = false;
+        const AnimationLibrary* m_animations = nullptr; // celle de la simulation (Renderer::SetAnimations)
         float m_rimScale = 1.0f; // 1 / pré-exposition de l'image en cours (lumière de contour)
         std::vector<Planetology::PlanetRenderer::Tile> m_planetTiles;
         std::vector<Planetology::PlanetRenderer::Plain> m_plains;

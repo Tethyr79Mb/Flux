@@ -125,7 +125,8 @@ travail, voir `CLAUDE.md` ; pour ce qui reste à faire, `Engine/ROADMAP.md` et `
    - systèmes du jeu à l'étape `AfterPhysics` : dégâts des projectiles arrivés (`Engine::GetProjectileHits`,
      `Game::Weapons::ApplyHits`), puis armes du joueur et des ennemis (`Game::Weapons::Update`, `CombatAI::Fire`), qui
      ajoutent leurs tirs à `Engine::GetProjectiles` ;
-   - animation (`Animator::Update`), après la physique ;
+   - animation (`Animator::Update`), après la physique : paramètres des personnages posés, transitions des graphes
+     suivies, animations pondérées écrites dans `AnimatorComponent::clips` (voir « Animation ») ;
    - puis la mise à jour du module du jeu.
 4. Caméra suiveuse placée, son 3D (`AudioSystem::Update`), mise à jour de l'éditeur s'il y en a un, puis les orbites
    (`Orbits::Update` : objets placés autour du Soleil, aussi quand le jeu est arrêté).
@@ -477,6 +478,31 @@ planète donne directement le sien comme indice d'instance.
   `double` autour des objets (sondes), sur 1 à 4 fils. Les arbres aussi : les plaines proches sont resemées par le CPU
   (`Planetology::SowPlain`, copie de `SowPlace` de `PlanetTile.slang`), une capsule par tronc dans un corps par plaine.
 
+## Animation
+
+- Graphe d'animation (`.fluxanim`, `ParseAnimationGraph`) : paramètres (nombres) et couches. La première couche
+  (états à la racine du fichier) anime tout le corps ; les suivantes (`"layers"`, 3 au plus) jouent par-dessus sur
+  les os de leur masque (un os et ses descendants), pour leur part (`"weight"` : nombre ou paramètre, atteinte en
+  `"fade"` secondes). Chaque couche a ses états (une animation, ou plusieurs mélangées selon un paramètre, cycles
+  calés en phase) et ses transitions à conditions (`speed > 0.1`), essayées dans l'ordre du fichier, avec fondu. Le
+  graphe du personnage est un asset du jeu (`Animations/Personnage.fluxanim`) ; le moteur ne pose que les paramètres
+  d'un personnage (`AnimationParameters` : vitesse, allure, temps en l'air, siège), le jeu les siens
+  (`Animator::SetParameter`). `"files"` ajoute aux animations du modèle celles d'autres fichiers du même squelette
+  (une animation Mixamo par fichier) : `RetargetAnimations` recâble leurs courbes sur les os du modèle par nom
+  (préfixe `mixamorig:` ignoré) ; un modèle et un graphe donnent un `AnimationSet`, dont les indices sont ceux des
+  clips.
+- Simulation (FluxSim, aussi le serveur) : `AnimationLibrary` lit squelettes et graphes à la première demande
+  (`Simulation::GetAnimations`, vidée à chaque `Start`) ; `Animator::Update` tient pour chaque couche une pile de 4
+  fondus au plus (le plus récent prend sa part sur les autres : un fondu interrompu ne saute pas) et en tire jusqu'à
+  32 animations pondérées, marquées de leur couche. Les sièges lisent la durée des états étiquetés `sitDown` et
+  `standUp`.
+- Objets accrochés à un os (`BoneAttachmentComponent`, `Attachments::Update` après l'animation, et à chaque image
+  dans l'éditeur jeu arrêté) : la simulation calcule la pose du parent (`Animator::Pose`, seulement s'il porte un
+  objet) et place l'enfant sur l'os, décalé dans le repère de l'os.
+- Rendu : `MeshRenderer::Pose` échantillonne ces animations (celles des fichiers du graphe prises dans l'`AnimationSet`
+  déjà lu par la simulation, `Renderer::SetAnimations`) (`PoseEvaluator::EvaluateLayers` : moyenne pondérée dans
+  chaque couche, rotations en nlerp, puis chaque couche sur les os de son masque) et envoie les matrices des os au GPU.
+
 ## Armes (`Game::Weapons`) et projectiles (`Projectiles`)
 
 - Partage (2026-11-01) : les armes, emports et points de vie sont au jeu (`Game/Module/src/Weapons.cpp`) ; le moteur
@@ -683,6 +709,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 | `*.scene.json` | scène (`flux.scene` v2 : exemplaires de prefabs) |
 | `*.prefab.json` | prefab (`flux.prefab`, même forme qu'une scène, une seule racine) |
 | `*.fluxui` | interface du jeu (`flux.ui` v1) |
+| `*.fluxanim` | graphe d'animation (`flux.anim` v1 : paramètres, couches, états, transitions) |
 | `Game.fluxproject` | projet : nom, assets, scène de démarrage |
 | `Touches.json` | touches réassignées (à côté de l'exe) |
 | `Sauvegardes/rapide.scene.json`, `rapide.joueur.json`, `rapide.depart.json` | sauvegarde rapide (à côté de l'exe) : la scène en cours, ouvrable dans l'éditeur, et le siège du joueur ; reprise au lancement du jeu (`Engine::ResumeQuickSave`), effacée par F7. `rapide.depart.json` est la scène d'où la partie était partie, telle qu'au chargement : si l'éditeur l'a modifiée depuis, sa version actuelle est chargée et fusionnée avec la partie (`SceneMerge::ApplyChanges`). `rapide.joueur.json` garde aussi l'état des systèmes du jeu (`Engine::AddGameSaveData` : la mission en cours, par identifiants) |
