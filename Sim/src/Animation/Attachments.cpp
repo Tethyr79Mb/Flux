@@ -23,7 +23,8 @@ namespace Flux::Attachments {
                 continue; // os mal nommé : l'objet reste où il est
             }
             if (parent != posed) {
-                Animator::Pose(evaluator, *skeleton, scene.TryGet<AnimatorComponent>(parent));
+                const auto* animator = scene.TryGet<AnimatorComponent>(parent);
+                Animator::Pose(evaluator, *skeleton, library.GetAnimationSet(model->model, animator ? std::string_view(animator->graph) : ""), animator);
                 posed = parent;
             }
             // Le repère du modèle est celui de son entité : la transformation locale de l'enfant y est exprimée.

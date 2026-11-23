@@ -60,6 +60,7 @@ namespace Flux::Animator {
         struct FadeClips
         {
             const ModelAnimation* animations[2] = {};
+            std::int16_t indices[2] = {-1, -1}; // dans AnimationSet::animations
             float weights[2] = {};
             float phases[2] = {}; // décalages des cycles
             int count = 0;
@@ -67,11 +68,18 @@ namespace Flux::Animator {
             bool loop = true;
         };
 
-        FadeClips ClipsOf(const AnimatorComponent& animator, const Graph::StateMachine* machine, const ModelSkeleton& skeleton,
+        // Animation de ce nom dans set, rangée en slot de clips.
+        void Resolve(FadeClips& clips, int slot, const AnimationSet& set, std::string_view name) {
+            const int index = set.Find(name);
+            clips.indices[slot] = static_cast<std::int16_t>(index);
+            clips.animations[slot] = index >= 0 ? set.animations[static_cast<std::size_t>(index)] : nullptr;
+        }
+
+        FadeClips ClipsOf(const AnimatorComponent& animator, const Graph::StateMachine* machine, const AnimationSet& set,
                           const AnimatorFade& fade) {
             FadeClips clips;
             if (!machine || fade.state < 0) {
-                clips.animations[0] = FindAnimation(skeleton, animator.animation);
+                Resolve(clips, 0, set, animator.animation);
                 clips.weights[0] = 1.0f;
                 clips.count = 1;
                 clips.loop = animator.loop;
@@ -80,7 +88,7 @@ namespace Flux::Animator {
             const Graph::State& state = machine->states[static_cast<std::size_t>(fade.state)];
             const Mix mix = MixOf(state, fade.blend);
             for (int i = 0; i < mix.count; ++i) {
-                clips.animations[i] = FindAnimation(skeleton, mix.points[i]->animation);
+                Resolve(clips, i, set, mix.points[i]->animation);
                 clips.weights[i] = mix.weights[i];
                 clips.phases[i] = mix.points[i]->phase;
             }
@@ -226,7 +234,7 @@ namespace Flux::Animator {
             return node >= 0 ? static_cast<std::int16_t>(node) : NoMask;
         }
 
-        void Start(AnimatorComponent& animator, const Graph* graph, const ModelSkeleton& skeleton) {
+        void Start(AnimatorComponent& animator, const Graph* graph, const AnimationSet& set) {
             animator.parameters.fill(0.0f);
             animator.layerCount = static_cast<std::uint8_t>(graph ? graph->layers.size() : 1);
             if (graph) {
@@ -240,7 +248,7 @@ namespace Flux::Animator {
                 Push(layer, graph ? graph->layers[l].start : -1, 0.0f);
                 if (graph) {
                     layer.weight = TargetWeight(animator, graph->layers[l], l);
-                    layer.maskNode = l == 0 ? -1 : MaskOf(graph->layers[l], skeleton);
+                    layer.maskNode = l == 0 ? -1 : MaskOf(graph->layers[l], *set.skeleton);
                 }
             }
             animator.started = true;
@@ -265,13 +273,13 @@ namespace Flux::Animator {
         }
 
         // Transitions, cycles et fondus d'une couche pour ce pas.
-        void AdvanceLayer(AnimatorComponent& animator, AnimatorLayer& layer, const Graph::StateMachine* machine, const ModelSkeleton& skeleton,
+        void AdvanceLayer(AnimatorComponent& animator, AnimatorLayer& layer, const Graph::StateMachine* machine, const AnimationSet& set,
                           bool fresh, float deltaSeconds) {
             if (machine) {
                 // Au début, les transitions sont prises d'un coup jusqu'à l'état qui convient (assis dès le départ).
                 for (std::size_t tries = fresh ? machine->states.size() : 1; tries > 0; --tries) {
                     AnimatorFade& top = layer.fades[layer.fadeCount - 1];
-                    const bool finished = Finished(ClipsOf(animator, machine, skeleton, top), top);
+                    const bool finished = Finished(ClipsOf(animator, machine, set, top), top);
                     const Graph::Transition* transition = FindTransition(*machine, animator.parameters, top.state, finished);
                     if (!transition) {
                         break;
@@ -286,7 +294,7 @@ namespace Flux::Animator {
             // Seul le fondu du dessus suit les paramètres ; ceux qui s'effacent gardent mélange et vitesse.
             AnimatorFade& top = layer.fades[layer.fadeCount - 1];
             top.blend = BlendOf(machine, animator, top.state);
-            top.rate = RateOf(ClipsOf(animator, machine, skeleton, top), animator.speed);
+            top.rate = RateOf(ClipsOf(animator, machine, set, top), animator.speed);
             for (std::size_t k = 0; k < layer.fadeCount; ++k) {
                 AnimatorFade& fade = layer.fades[k];
                 fade.phase += fade.rate * deltaSeconds;
@@ -296,14 +304,14 @@ namespace Flux::Animator {
         }
 
         // Animations pondérées d'une couche : chaque fondu prend fade de ce qui reste sous lui.
-        void WriteClips(AnimatorComponent& animator, std::size_t index, const Graph::StateMachine* machine, const ModelSkeleton& skeleton) {
+        void WriteClips(AnimatorComponent& animator, std::size_t index, const Graph::StateMachine* machine, const AnimationSet& set) {
             const AnimatorLayer& layer = animator.layers[index];
             float remaining = 1.0f;
             for (std::size_t k = layer.fadeCount; k-- > 0;) {
                 const AnimatorFade& fade = layer.fades[k];
                 const float share = remaining * (k == 0 ? 1.0f : fade.fade);
                 remaining -= share;
-                const FadeClips clips = ClipsOf(animator, machine, skeleton, fade);
+                const FadeClips clips = ClipsOf(animator, machine, set, fade);
                 for (int i = 0; i < clips.count; ++i) {
                     const float weight = share * clips.weights[i];
                     if (!clips.animations[i] || weight < MinWeight || animator.clipCount == AnimatorComponent::MaxClips) {
@@ -312,7 +320,7 @@ namespace Flux::Animator {
                     const ModelAnimation& animation = *clips.animations[i];
                     const float phase = clips.loop ? fade.phase + clips.phases[i] : std::clamp(fade.phase, 0.0f, 1.0f);
                     animator.clips[animator.clipCount++] = {
-                        .animation = static_cast<std::int16_t>(&animation - skeleton.animations.data()),
+                        .animation = clips.indices[i],
                         .layer = static_cast<std::uint8_t>(index),
                         .loop = clips.loop,
                         .time = phase * animation.duration,
@@ -323,11 +331,11 @@ namespace Flux::Animator {
         }
 
         // Pas d'un animateur dont le squelette est connu.
-        void Advance(AnimatorComponent& animator, const Graph* graph, const ModelSkeleton& skeleton, const CharacterComponent* character,
+        void Advance(AnimatorComponent& animator, const Graph* graph, const AnimationSet& set, const CharacterComponent* character,
                      float deltaSeconds) {
             const bool fresh = !animator.started;
             if (fresh || !Matches(animator, graph)) {
-                Start(animator, graph, skeleton);
+                Start(animator, graph, set);
             }
             if (graph && character) {
                 SetCharacterParameters(animator, *graph, *character);
@@ -342,9 +350,9 @@ namespace Flux::Animator {
                     const float step = machine->fade > 0.0f ? deltaSeconds / machine->fade : 1.0f;
                     layer.weight = layer.weight < target ? std::min(target, layer.weight + step) : std::max(target, layer.weight - step);
                 }
-                AdvanceLayer(animator, layer, machine, skeleton, fresh, deltaSeconds);
+                AdvanceLayer(animator, layer, machine, set, fresh, deltaSeconds);
                 if (l == 0 || (layer.weight > 0.0f && layer.maskNode != NoMask)) {
-                    WriteClips(animator, l, machine, skeleton);
+                    WriteClips(animator, l, machine, set);
                 }
             }
         }
@@ -353,27 +361,36 @@ namespace Flux::Animator {
     void Update(Scene& scene, AnimationLibrary& library, double deltaSeconds) {
         for (const auto [entity, animator] : scene.GetRegistry().view<AnimatorComponent>().each()) {
             const auto* model = scene.TryGet<ModelComponent>(entity);
-            const ModelSkeleton* skeleton = model ? library.GetSkeleton(model->model) : nullptr;
-            if (!skeleton || skeleton->animations.empty()) {
+            const AnimationSet* set = model ? library.GetAnimationSet(model->model, animator.graph) : nullptr;
+            if (!set || set->animations.empty()) {
                 animator.clipCount = 0; // la pose de repos
                 continue;
             }
-            Advance(animator, library.GetGraph(animator.graph), *skeleton, scene.TryGet<CharacterComponent>(entity),
+            Advance(animator, library.GetGraph(animator.graph), *set, scene.TryGet<CharacterComponent>(entity),
                     static_cast<float>(deltaSeconds));
         }
     }
 
-    void Pose(PoseEvaluator& evaluator, const ModelSkeleton& skeleton, const AnimatorComponent* animator) {
-        const std::vector<ModelAnimation>& animations = skeleton.animations;
+    void Pose(PoseEvaluator& evaluator, const ModelSkeleton& skeleton, const AnimationSet* set, const AnimatorComponent* animator) {
+        // Sans set (pas encore lu), les animations du modèle seules : celles des fichiers du graphe viennent après.
+        const std::size_t available = set ? set->animations.size() : skeleton.animations.size();
+        const auto animationAt = [&](std::size_t index) { return set ? set->animations[index] : &skeleton.animations[index]; };
         if (!animator || animator->clipCount == 0) {
-            evaluator.Evaluate(skeleton, AnimationSample{animator ? FindAnimation(skeleton, animator->animation) : nullptr, 0.0, false});
+            const ModelAnimation* first = nullptr;
+            if (animator && set) {
+                const int index = set->Find(animator->animation);
+                first = index >= 0 ? set->animations[static_cast<std::size_t>(index)] : nullptr;
+            } else if (animator) {
+                first = FindAnimation(skeleton, animator->animation);
+            }
+            evaluator.Evaluate(skeleton, AnimationSample{first, 0.0, false});
             return;
         }
         std::array<AnimationSample, AnimatorComponent::MaxClips> samples;
         std::size_t count = 0;
         for (const AnimationClipWeight& clip : std::span(animator->clips).first(animator->clipCount)) {
-            if (clip.animation >= 0 && static_cast<std::size_t>(clip.animation) < animations.size()) {
-                samples[count++] = {&animations[static_cast<std::size_t>(clip.animation)], clip.time, clip.loop, clip.weight, clip.layer};
+            if (clip.animation >= 0 && static_cast<std::size_t>(clip.animation) < available) {
+                samples[count++] = {animationAt(static_cast<std::size_t>(clip.animation)), clip.time, clip.loop, clip.weight, clip.layer};
             }
         }
         // Couches par-dessus le corps (haut du corps…) : l'os de leur masque ; un masque introuvable ne joue rien.
@@ -397,8 +414,8 @@ namespace Flux::Animator {
 
     float GetTagDuration(AnimationLibrary& library, const AnimatorComponent& animator, std::string_view model, std::string_view tag) {
         const AnimationGraph* graph = library.GetGraph(animator.graph);
-        const ModelSkeleton* skeleton = library.GetSkeleton(model);
-        if (!graph || !skeleton) {
+        const AnimationSet* set = library.GetAnimationSet(model, animator.graph);
+        if (!graph || !set) {
             return 0.0f;
         }
         for (const Graph::Layer& layer : graph->layers) {
@@ -407,7 +424,8 @@ namespace Flux::Animator {
                 continue;
             }
             const Graph::State& found = layer.states[static_cast<std::size_t>(state)];
-            const ModelAnimation* animation = FindAnimation(*skeleton, found.points.front().animation);
+            const int index = set->Find(found.points.front().animation);
+            const ModelAnimation* animation = index >= 0 ? set->animations[static_cast<std::size_t>(index)] : nullptr;
             const float speed = found.speed * animator.speed;
             return animation && speed > 0.0f ? animation->duration / speed : 0.0f;
         }

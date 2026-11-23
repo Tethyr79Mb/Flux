@@ -398,6 +398,62 @@ namespace {
         return true;
     }
 
+    bool RunAnimationFileTests() {
+        // Liste des fichiers d'animations du graphe.
+        auto parsed = ParseAnimationGraph(R"({"files": ["Animations/marche.glb"], "states": [{"name": "Marche", "animation": "Marche"}]})");
+        CHECK(parsed && parsed->files.size() == 1 && parsed->files[0] == "Animations/marche.glb");
+        CHECK(!ParseAnimationGraph(R"({"files": "marche.glb", "states": [{"name": "A", "animation": "a"}]})"));
+
+        // Modèle : racine, hanches, torse, avec sa propre animation « Repos ». Fichier exporté de Mixamo : os préfixés,
+        // un os en plus (« queue ») et dans un autre ordre.
+        ModelSkeleton model;
+        model.nodes.push_back({"Armature", -1, {}, {}, {1, 1, 1}});
+        model.nodes.push_back({"Hips", 0, {}, {}, {1, 1, 1}});
+        model.nodes.push_back({"Spine", 1, {}, {}, {1, 1, 1}});
+        model.animations.push_back({"Repos", 1.0f, {{2, AnimationPath::Translation, AnimationInterpolation::Step, {0}, {0, 1, 0}}}});
+        ModelSkeleton file;
+        file.nodes.push_back({"mixamorig:Hips", -1, {}, {}, {1, 1, 1}});
+        file.nodes.push_back({"mixamorig:Tail", 0, {}, {}, {1, 1, 1}});
+        file.nodes.push_back({"mixamorig:Spine", 0, {}, {}, {1, 1, 1}});
+        ModelAnimation walk{"Marche", 2.0f, {}};
+        walk.channels.push_back({2, AnimationPath::Translation, AnimationInterpolation::Step, {0}, {0, 3, 0}});
+        walk.channels.push_back({1, AnimationPath::Translation, AnimationInterpolation::Step, {0}, {9, 9, 9}});
+        walk.channels.push_back({0, AnimationPath::Translation, AnimationInterpolation::Step, {0}, {0, 0, 4}});
+        file.animations.push_back(walk);
+        file.animations.push_back({"Repos", 1.0f, {}}); // même nom que celle du modèle : celle du modèle reste
+
+        // Recâblage par nom : la queue, absente du modèle, est laissée.
+        const std::vector<ModelAnimation> moved = RetargetAnimations(file, model);
+        CHECK(moved.size() == 2 && moved[0].channels.size() == 2 && moved[0].duration == 2.0f);
+        CHECK(moved[0].channels[0].node == 2 && moved[0].channels[1].node == 1);
+
+        AnimationLibrary library;
+        library.SetSkeleton("soldat.glb", model);
+        library.SetSkeleton("Animations/marche.glb", file);
+        library.SetGraph("soldat.fluxanim", std::move(*parsed));
+        CHECK(library.FindAnimationSet("soldat.glb", "soldat.fluxanim") == nullptr); // rien lu encore
+        const AnimationSet* set = library.GetAnimationSet("soldat.glb", "soldat.fluxanim");
+        CHECK(set && set->animations.size() == 3 && set->Find("Marche") == 1 && set->Find("Repos") == 0 && set->Find("") == 0);
+        CHECK(library.FindAnimationSet("soldat.glb", "soldat.fluxanim") == set);
+        CHECK(library.GetAnimationSet("soldat.glb", "")->animations.size() == 1);
+
+        // L'animateur joue la marche du fichier : son clip est l'indice dans la liste, au-delà de celles du modèle.
+        Scene scene;
+        const Entity soldier = scene.CreateEntity("Soldat");
+        scene.Add<ModelComponent>(soldier).model = "soldat.glb";
+        scene.Add<AnimatorComponent>(soldier, AnimatorComponent{.graph = "soldat.fluxanim"});
+        Animator::Update(scene, library, 0.5);
+        const AnimatorComponent& animator = scene.Get<AnimatorComponent>(soldier);
+        CHECK(animator.clipCount == 1 && animator.clips[0].animation == 1 && Close(animator.clips[0].time, 0.5f));
+        PoseEvaluator pose;
+        Animator::Pose(pose, model, set, &animator);
+        CHECK(Near(pose.GetLocalPoses()[2].translation, {0, 3, 0}) && Near(pose.GetLocalPoses()[1].translation, {0, 0, 4}));
+        // Sans la liste (rendu avant la première lecture) : l'animation inconnue est laissée, la pose de repos.
+        Animator::Pose(pose, model, nullptr, &animator);
+        CHECK(Near(pose.GetLocalPoses()[2].translation, {0, 0, 0}));
+        return true;
+    }
+
     bool RunAnimatorTests() {
         // Le graphe du personnage du jeu, tel qu'il est livré.
         AnimationLibrary library;
@@ -502,7 +558,8 @@ bool RunAnimationTests() {
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory);
-    const bool passed = RunLoadingTests(directory) && RunSamplingTests() && RunGraphParsingTests() && RunLayerParsingTests() && RunAnimatorTests() && RunLayerTests() && RunAttachmentTests();
+    const bool passed = RunLoadingTests(directory) && RunSamplingTests() && RunGraphParsingTests() && RunLayerParsingTests() && RunAnimatorTests() && RunLayerTests() && RunAttachmentTests()
+                        && RunAnimationFileTests();
     std::filesystem::remove_all(directory, error);
     return passed;
 }
