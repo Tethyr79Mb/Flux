@@ -175,41 +175,79 @@ namespace Flux {
         }
     }
 
-    void PoseEvaluator::EvaluateBlend(const ModelSkeleton& skeleton, std::span<const AnimationSample> samples) {
-        const std::size_t nodeCount = skeleton.nodes.size();
-        float total = 0.0f;
-        for (const AnimationSample& sample : samples) {
-            total += std::max(sample.weight, 0.0f);
-        }
-        if (samples.size() == 1 || !(total > 0.0f)) {
-            SamplePose(skeleton, samples.size() == 1 ? samples.front() : AnimationSample{}, m_poses);
-        } else {
+    namespace {
+        // Mélange des échantillons de la couche layer dans poses (sample : de quoi échantillonner) ; faux si aucun n'a
+        // de part, poses étant alors la pose de repos.
+        bool BlendLayer(const ModelSkeleton& skeleton, std::span<const AnimationSample> samples, std::uint8_t layer,
+                        std::vector<NodePose>& poses, std::vector<NodePose>& sample) {
+            const std::size_t nodeCount = skeleton.nodes.size();
+            float total = 0.0f;
+            std::size_t count = 0;
+            const AnimationSample* only = nullptr;
+            for (const AnimationSample& candidate : samples) {
+                if (candidate.layer == layer && candidate.weight > 0.0f) {
+                    total += candidate.weight;
+                    only = &candidate;
+                    ++count;
+                }
+            }
+            if (count <= 1) {
+                SamplePose(skeleton, only ? *only : AnimationSample{}, poses);
+                return only != nullptr;
+            }
             // Somme pondérée, rotations ramenées dans le même hémisphère que la première (q et -q sont la même
             // rotation), puis normalisées : assez juste entre poses voisines, sans dépendre de l'ordre des parts.
-            m_poses.assign(nodeCount, NodePose{{}, {0.0f, 0.0f, 0.0f, 0.0f}, {}});
+            poses.assign(nodeCount, NodePose{{}, {0.0f, 0.0f, 0.0f, 0.0f}, {}});
             bool first = true;
-            for (const AnimationSample& sample : samples) {
-                const float weight = std::max(sample.weight, 0.0f) / total;
-                if (weight <= 0.0f) {
+            for (const AnimationSample& candidate : samples) {
+                if (candidate.layer != layer || candidate.weight <= 0.0f) {
                     continue;
                 }
-                SamplePose(skeleton, sample, m_sample);
+                const float weight = candidate.weight / total;
+                SamplePose(skeleton, candidate, sample);
                 for (std::size_t n = 0; n < nodeCount; ++n) {
-                    NodePose& pose = m_poses[n];
-                    const NodePose& add = m_sample[n];
+                    NodePose& pose = poses[n];
+                    const NodePose& add = sample[n];
                     pose.translation = pose.translation + add.translation * weight;
                     pose.scale = pose.scale + add.scale * weight;
+                    const float sign = !first && Math::Dot(pose.rotation, add.rotation) < 0.0f ? -weight : weight;
                     const Quaternionf& q = add.rotation;
-                    const float sign = !first && pose.rotation.x * q.x + pose.rotation.y * q.y + pose.rotation.z * q.z + pose.rotation.w * q.w < 0.0f
-                                           ? -weight
-                                           : weight;
                     pose.rotation = {pose.rotation.x + q.x * sign, pose.rotation.y + q.y * sign, pose.rotation.z + q.z * sign,
                                      pose.rotation.w + q.w * sign};
                 }
                 first = false;
             }
-            for (NodePose& pose : m_poses) {
+            for (NodePose& pose : poses) {
                 pose.rotation = Math::Normalize(pose.rotation);
+            }
+            return true;
+        }
+    }
+
+    void PoseEvaluator::EvaluateLayers(const ModelSkeleton& skeleton, std::span<const AnimationSample> samples,
+                                       std::span<const PoseLayer> layers) {
+        const std::size_t nodeCount = skeleton.nodes.size();
+        BlendLayer(skeleton, samples, 0, m_poses, m_sample);
+        for (std::size_t l = 0; l < layers.size(); ++l) {
+            const PoseLayer& layer = layers[l];
+            const float weight = std::clamp(layer.weight, 0.0f, 1.0f);
+            if (weight <= 0.0f || layer.node >= static_cast<int>(nodeCount)
+                || !BlendLayer(skeleton, samples, static_cast<std::uint8_t>(l + 1), m_layer, m_sample)) {
+                continue;
+            }
+            // Os du masque : le nœud et ses descendants (parents avant enfants : un seul passage).
+            m_masked.assign(nodeCount, 0);
+            for (std::size_t n = 0; n < nodeCount; ++n) {
+                const int parent = skeleton.nodes[n].parent;
+                m_masked[n] = layer.node < 0 || static_cast<int>(n) == layer.node || (parent >= 0 && m_masked[static_cast<std::size_t>(parent)]);
+                if (!m_masked[n]) {
+                    continue;
+                }
+                NodePose& pose = m_poses[n];
+                const NodePose& over = m_layer[n];
+                pose.translation = pose.translation + (over.translation - pose.translation) * weight;
+                pose.scale = pose.scale + (over.scale - pose.scale) * weight;
+                pose.rotation = Math::Slerp(pose.rotation, over.rotation, weight);
             }
         }
 

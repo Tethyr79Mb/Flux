@@ -14,6 +14,7 @@ namespace Flux::Animator {
     namespace {
         using Graph = AnimationGraph;
         static_assert(Graph::MaxParameters == std::tuple_size_v<decltype(AnimatorComponent::parameters)>);
+        static_assert(Graph::MaxLayers == AnimatorComponent::MaxLayers);
 
         constexpr float MinWeight = 1.0e-4f; // part en dessous de laquelle une animation n'est pas échantillonnée
 
@@ -54,8 +55,8 @@ namespace Flux::Animator {
             return mix;
         }
 
-        // Animations d'une couche : celles de son état, ou celle de l'animateur sans graphe.
-        struct LayerClips
+        // Animations d'un fondu : celles de son état, ou celle de l'animateur sans graphe.
+        struct FadeClips
         {
             const ModelAnimation* animations[2] = {};
             float weights[2] = {};
@@ -65,18 +66,18 @@ namespace Flux::Animator {
             bool loop = true;
         };
 
-        LayerClips ClipsOf(const AnimatorComponent& animator, const Graph* graph, const ModelSkeleton& skeleton,
-                           const AnimatorLayer& layer) {
-            LayerClips clips;
-            if (!graph || layer.state < 0) {
+        FadeClips ClipsOf(const AnimatorComponent& animator, const Graph::StateMachine* machine, const ModelSkeleton& skeleton,
+                          const AnimatorFade& fade) {
+            FadeClips clips;
+            if (!machine || fade.state < 0) {
                 clips.animations[0] = FindAnimation(skeleton, animator.animation);
                 clips.weights[0] = 1.0f;
                 clips.count = 1;
                 clips.loop = animator.loop;
                 return clips;
             }
-            const Graph::State& state = graph->states[static_cast<std::size_t>(layer.state)];
-            const Mix mix = MixOf(state, layer.blend);
+            const Graph::State& state = machine->states[static_cast<std::size_t>(fade.state)];
+            const Mix mix = MixOf(state, fade.blend);
             for (int i = 0; i < mix.count; ++i) {
                 clips.animations[i] = FindAnimation(skeleton, mix.points[i]->animation);
                 clips.weights[i] = mix.weights[i];
@@ -90,7 +91,7 @@ namespace Flux::Animator {
 
         // Cycles par seconde : la durée du cycle mélangé est la moyenne pondérée de celles des animations, qui
         // restent ainsi calées l'une sur l'autre (même phase).
-        float RateOf(const LayerClips& clips, float speed) {
+        float RateOf(const FadeClips& clips, float speed) {
             float duration = 0.0f;
             for (int i = 0; i < clips.count; ++i) {
                 duration += clips.animations[i] ? clips.weights[i] * clips.animations[i]->duration : 0.0f;
@@ -98,8 +99,8 @@ namespace Flux::Animator {
             return duration > 0.0f ? speed * clips.scale / duration : 0.0f;
         }
 
-        bool Finished(const LayerClips& clips, const AnimatorLayer& layer) {
-            return !clips.loop && layer.phase >= 1.0f;
+        bool Finished(const FadeClips& clips, const AnimatorFade& fade) {
+            return !clips.loop && fade.phase >= 1.0f;
         }
 
         bool Holds(const Graph::Condition& condition, std::span<const float> parameters) {
@@ -116,8 +117,9 @@ namespace Flux::Animator {
         }
 
         // Transition à prendre depuis l'état current, nullptr s'il n'y en a pas.
-        const Graph::Transition* FindTransition(const Graph& graph, std::span<const float> parameters, int current, bool finished) {
-            for (const Graph::Transition& transition : graph.transitions) {
+        const Graph::Transition* FindTransition(const Graph::StateMachine& machine, std::span<const float> parameters, int current,
+                                                bool finished) {
+            for (const Graph::Transition& transition : machine.transitions) {
                 if ((transition.from >= 0 && transition.from != current) || transition.to == current || (transition.atEnd && !finished)) {
                     continue;
                 }
@@ -128,12 +130,23 @@ namespace Flux::Animator {
             return nullptr;
         }
 
-        float BlendOf(const Graph* graph, const AnimatorComponent& animator, int state) {
-            if (!graph || state < 0) {
+        float BlendOf(const Graph::StateMachine* machine, const AnimatorComponent& animator, int state) {
+            if (!machine || state < 0) {
                 return 0.0f;
             }
-            const int parameter = graph->states[static_cast<std::size_t>(state)].blendParameter;
+            const int parameter = machine->states[static_cast<std::size_t>(state)].blendParameter;
             return parameter >= 0 ? animator.parameters[static_cast<std::size_t>(parameter)] : 0.0f;
+        }
+
+        // Part voulue d'une couche : 1 pour le corps entier, sinon son paramètre (borné) ou sa valeur.
+        float TargetWeight(const AnimatorComponent& animator, const Graph::Layer& layer, std::size_t index) {
+            if (index == 0) {
+                return 1.0f;
+            }
+            if (layer.weightParameter >= 0) {
+                return std::clamp(animator.parameters[static_cast<std::size_t>(layer.weightParameter)], 0.0f, 1.0f);
+            }
+            return layer.weight;
         }
 
         // Allure (AnimationParameters::Gait) : 1 à la marche, 2 à la course, en proportion entre et au-delà.
@@ -160,116 +173,177 @@ namespace Flux::Animator {
             SetParameter(animator, graph, AnimationParameters::Seat, static_cast<float>(character.seatState));
         }
 
-        // Nouvelle couche en haut de la pile, fondue sur les autres en duration secondes. Pile pleine : la plus
-        // ancienne est lâchée (un léger saut, rare : quatre transitions en un quart de seconde).
-        void Push(AnimatorComponent& animator, int state, float duration) {
-            if (animator.layerCount == AnimatorComponent::MaxLayers) {
-                std::shift_left(animator.layers.begin(), animator.layers.end(), 1);
-                --animator.layerCount;
-                animator.layers[0].fade = 1.0f;
+        // Nouveau fondu en haut de la pile d'une couche, sur les autres en duration secondes. Pile pleine : le plus
+        // ancien est lâché (un léger saut, rare : quatre transitions en un quart de seconde).
+        void Push(AnimatorLayer& layer, int state, float duration) {
+            if (layer.fadeCount == AnimatorLayer::MaxFades) {
+                std::shift_left(layer.fades.begin(), layer.fades.end(), 1);
+                --layer.fadeCount;
+                layer.fades[0].fade = 1.0f;
             }
-            AnimatorLayer layer{.state = static_cast<std::int16_t>(state)};
+            AnimatorFade fade{.state = static_cast<std::int16_t>(state)};
             // Revenue à un état qui s'efface encore (repos, marche, repos) : son cycle continue au lieu de repartir.
-            for (std::size_t k = animator.layerCount; k-- > 0;) {
-                if (animator.layers[k].state == state) {
-                    layer.phase = animator.layers[k].phase;
+            for (std::size_t k = layer.fadeCount; k-- > 0;) {
+                if (layer.fades[k].state == state) {
+                    fade.phase = layer.fades[k].phase;
                     break;
                 }
             }
-            if (duration > 0.0f && animator.layerCount > 0) {
-                layer.fade = 0.0f;
-                layer.fadeRate = 1.0f / duration;
+            if (duration > 0.0f && layer.fadeCount > 0) {
+                fade.fade = 0.0f;
+                fade.fadeRate = 1.0f / duration;
             }
-            animator.layers[animator.layerCount++] = layer;
+            layer.fades[layer.fadeCount++] = fade;
         }
 
-        // Retire les couches entièrement cachées par une couche plus récente arrivée au bout de son fondu.
-        void DropHidden(AnimatorComponent& animator) {
-            for (std::size_t k = animator.layerCount; k-- > 1;) {
-                if (animator.layers[k].fade >= 1.0f) {
-                    std::shift_left(animator.layers.begin(), animator.layers.begin() + animator.layerCount, static_cast<std::ptrdiff_t>(k));
-                    animator.layerCount = static_cast<std::uint8_t>(animator.layerCount - k);
+        // Retire les fondus entièrement cachés par un plus récent arrivé au bout de son fondu.
+        void DropHidden(AnimatorLayer& layer) {
+            for (std::size_t k = layer.fadeCount; k-- > 1;) {
+                if (layer.fades[k].fade >= 1.0f) {
+                    std::shift_left(layer.fades.begin(), layer.fades.begin() + layer.fadeCount, static_cast<std::ptrdiff_t>(k));
+                    layer.fadeCount = static_cast<std::uint8_t>(layer.fadeCount - k);
                     break;
                 }
             }
-            animator.layers[0].fade = 1.0f;
+            layer.fades[0].fade = 1.0f;
         }
 
-        void Start(AnimatorComponent& animator, const Graph* graph) {
+        int FindNode(const ModelSkeleton& skeleton, std::string_view name) {
+            const auto found = std::ranges::find(skeleton.nodes, name, &SkeletonNode::name);
+            return found != skeleton.nodes.end() ? static_cast<int>(found - skeleton.nodes.begin()) : -1;
+        }
+
+        // Os du masque d'une couche, -1 pour tout le corps, NoMask si l'os n'est pas dans ce squelette (couche coupée :
+        // un masque mal nommé ne doit pas animer tout le corps).
+        constexpr std::int16_t NoMask = -2;
+
+        std::int16_t MaskOf(const Graph::Layer& layer, const ModelSkeleton& skeleton) {
+            if (layer.mask.empty()) {
+                return -1;
+            }
+            const int node = FindNode(skeleton, layer.mask);
+            return node >= 0 ? static_cast<std::int16_t>(node) : NoMask;
+        }
+
+        void Start(AnimatorComponent& animator, const Graph* graph, const ModelSkeleton& skeleton) {
             animator.parameters.fill(0.0f);
-            animator.layerCount = 0;
+            animator.layerCount = static_cast<std::uint8_t>(graph ? graph->layers.size() : 1);
             if (graph) {
                 for (std::size_t p = 0; p < graph->parameters.size(); ++p) {
                     animator.parameters[p] = graph->parameters[p].value;
                 }
             }
-            Push(animator, graph ? graph->start : -1, 0.0f);
+            for (std::size_t l = 0; l < animator.layerCount; ++l) {
+                AnimatorLayer& layer = animator.layers[l];
+                layer = {};
+                Push(layer, graph ? graph->layers[l].start : -1, 0.0f);
+                if (graph) {
+                    layer.weight = TargetWeight(animator, graph->layers[l], l);
+                    layer.maskNode = l == 0 ? -1 : MaskOf(graph->layers[l], skeleton);
+                }
+            }
             animator.started = true;
         }
 
-        // Pas d'un animateur dont le squelette est connu.
-        void Advance(AnimatorComponent& animator, const Graph* graph, const ModelSkeleton& skeleton, const CharacterComponent* character,
-                     float deltaSeconds) {
-            const bool fresh = !animator.started;
-            // Graphe changé ou arrivé (fichier modifié, autre graphe choisi) : ses états ne sont plus ceux des couches.
-            const int stateCount = graph ? static_cast<int>(graph->states.size()) : 0;
-            if (fresh || animator.layerCount == 0
-                || std::ranges::any_of(std::span(animator.layers).first(animator.layerCount),
-                                       [&](const AnimatorLayer& layer) { return layer.state >= stateCount || (graph != nullptr) != (layer.state >= 0); })) {
-                Start(animator, graph);
+        // Graphe changé ou arrivé (fichier modifié, autre graphe choisi) : ses couches et ses états ne sont plus ceux
+        // de la lecture en cours.
+        bool Matches(const AnimatorComponent& animator, const Graph* graph) {
+            if (animator.layerCount != (graph ? graph->layers.size() : 1)) {
+                return false;
             }
-            if (graph && character) {
-                SetCharacterParameters(animator, *graph, *character);
+            for (std::size_t l = 0; l < animator.layerCount; ++l) {
+                const AnimatorLayer& layer = animator.layers[l];
+                const int stateCount = graph ? static_cast<int>(graph->layers[l].states.size()) : 0;
+                if (layer.fadeCount == 0 || std::ranges::any_of(std::span(layer.fades).first(layer.fadeCount), [&](const AnimatorFade& fade) {
+                        return fade.state >= stateCount || (graph != nullptr) != (fade.state >= 0);
+                    })) {
+                    return false;
+                }
             }
-            if (graph) {
+            return true;
+        }
+
+        // Transitions, cycles et fondus d'une couche pour ce pas.
+        void AdvanceLayer(AnimatorComponent& animator, AnimatorLayer& layer, const Graph::StateMachine* machine, const ModelSkeleton& skeleton,
+                          bool fresh, float deltaSeconds) {
+            if (machine) {
                 // Au début, les transitions sont prises d'un coup jusqu'à l'état qui convient (assis dès le départ).
-                for (std::size_t tries = fresh ? graph->states.size() : 1; tries > 0; --tries) {
-                    AnimatorLayer& top = animator.layers[animator.layerCount - 1];
-                    const bool finished = Finished(ClipsOf(animator, graph, skeleton, top), top);
-                    const Graph::Transition* transition = FindTransition(*graph, animator.parameters, top.state, finished);
+                for (std::size_t tries = fresh ? machine->states.size() : 1; tries > 0; --tries) {
+                    AnimatorFade& top = layer.fades[layer.fadeCount - 1];
+                    const bool finished = Finished(ClipsOf(animator, machine, skeleton, top), top);
+                    const Graph::Transition* transition = FindTransition(*machine, animator.parameters, top.state, finished);
                     if (!transition) {
                         break;
                     }
                     if (fresh) {
-                        top = AnimatorLayer{.state = static_cast<std::int16_t>(transition->to)};
+                        top = AnimatorFade{.state = static_cast<std::int16_t>(transition->to)};
                     } else {
-                        Push(animator, transition->to, transition->duration);
+                        Push(layer, transition->to, transition->duration);
                     }
                 }
             }
-
-            // Seule la couche du dessus suit les paramètres ; celles qui s'effacent gardent mélange et vitesse.
-            AnimatorLayer& top = animator.layers[animator.layerCount - 1];
-            top.blend = BlendOf(graph, animator, top.state);
-            top.rate = RateOf(ClipsOf(animator, graph, skeleton, top), animator.speed);
-            for (std::size_t k = 0; k < animator.layerCount; ++k) {
-                AnimatorLayer& layer = animator.layers[k];
-                layer.phase += layer.rate * deltaSeconds;
-                layer.fade = std::min(1.0f, layer.fade + layer.fadeRate * deltaSeconds);
+            // Seul le fondu du dessus suit les paramètres ; ceux qui s'effacent gardent mélange et vitesse.
+            AnimatorFade& top = layer.fades[layer.fadeCount - 1];
+            top.blend = BlendOf(machine, animator, top.state);
+            top.rate = RateOf(ClipsOf(animator, machine, skeleton, top), animator.speed);
+            for (std::size_t k = 0; k < layer.fadeCount; ++k) {
+                AnimatorFade& fade = layer.fades[k];
+                fade.phase += fade.rate * deltaSeconds;
+                fade.fade = std::min(1.0f, fade.fade + fade.fadeRate * deltaSeconds);
             }
-            DropHidden(animator);
+            DropHidden(layer);
+        }
 
-            // Parts : chaque couche prend fade de ce qui reste sous elle.
-            animator.clipCount = 0;
+        // Animations pondérées d'une couche : chaque fondu prend fade de ce qui reste sous lui.
+        void WriteClips(AnimatorComponent& animator, std::size_t index, const Graph::StateMachine* machine, const ModelSkeleton& skeleton) {
+            const AnimatorLayer& layer = animator.layers[index];
             float remaining = 1.0f;
-            for (std::size_t k = animator.layerCount; k-- > 0;) {
-                const AnimatorLayer& layer = animator.layers[k];
-                const float share = remaining * (k == 0 ? 1.0f : layer.fade);
+            for (std::size_t k = layer.fadeCount; k-- > 0;) {
+                const AnimatorFade& fade = layer.fades[k];
+                const float share = remaining * (k == 0 ? 1.0f : fade.fade);
                 remaining -= share;
-                const LayerClips clips = ClipsOf(animator, graph, skeleton, layer);
+                const FadeClips clips = ClipsOf(animator, machine, skeleton, fade);
                 for (int i = 0; i < clips.count; ++i) {
                     const float weight = share * clips.weights[i];
                     if (!clips.animations[i] || weight < MinWeight || animator.clipCount == AnimatorComponent::MaxClips) {
                         continue;
                     }
                     const ModelAnimation& animation = *clips.animations[i];
-                    const float phase = clips.loop ? layer.phase + clips.phases[i] : std::clamp(layer.phase, 0.0f, 1.0f);
+                    const float phase = clips.loop ? fade.phase + clips.phases[i] : std::clamp(fade.phase, 0.0f, 1.0f);
                     animator.clips[animator.clipCount++] = {
                         .animation = static_cast<std::int16_t>(&animation - skeleton.animations.data()),
+                        .layer = static_cast<std::uint8_t>(index),
                         .loop = clips.loop,
                         .time = phase * animation.duration,
                         .weight = weight,
                     };
+                }
+            }
+        }
+
+        // Pas d'un animateur dont le squelette est connu.
+        void Advance(AnimatorComponent& animator, const Graph* graph, const ModelSkeleton& skeleton, const CharacterComponent* character,
+                     float deltaSeconds) {
+            const bool fresh = !animator.started;
+            if (fresh || !Matches(animator, graph)) {
+                Start(animator, graph, skeleton);
+            }
+            if (graph && character) {
+                SetCharacterParameters(animator, *graph, *character);
+            }
+            animator.clipCount = 0;
+            for (std::size_t l = 0; l < animator.layerCount; ++l) {
+                AnimatorLayer& layer = animator.layers[l];
+                const Graph::Layer* machine = graph ? &graph->layers[l] : nullptr;
+                if (machine) {
+                    // Part de la couche : vers la voulue, en fade secondes (sortir l'arme, la ranger).
+                    const float target = TargetWeight(animator, *machine, l);
+                    const float step = machine->fade > 0.0f ? deltaSeconds / machine->fade : 1.0f;
+                    layer.weight = layer.weight < target ? std::min(target, layer.weight + step) : std::max(target, layer.weight - step);
+                }
+                AdvanceLayer(animator, layer, machine, skeleton, fresh, deltaSeconds);
+                if (l == 0 || (layer.weight > 0.0f && layer.maskNode != NoMask)) {
+                    WriteClips(animator, l, machine, skeleton);
                 }
             }
         }
@@ -300,13 +374,19 @@ namespace Flux::Animator {
     float GetTagDuration(AnimationLibrary& library, const AnimatorComponent& animator, std::string_view model, std::string_view tag) {
         const AnimationGraph* graph = library.GetGraph(animator.graph);
         const ModelSkeleton* skeleton = library.GetSkeleton(model);
-        const int state = graph ? graph->FindTag(tag) : -1;
-        if (state < 0 || !skeleton) {
+        if (!graph || !skeleton) {
             return 0.0f;
         }
-        const Graph::State& found = graph->states[static_cast<std::size_t>(state)];
-        const ModelAnimation* animation = FindAnimation(*skeleton, found.points.front().animation);
-        const float speed = found.speed * animator.speed;
-        return animation && speed > 0.0f ? animation->duration / speed : 0.0f;
+        for (const Graph::Layer& layer : graph->layers) {
+            const int state = layer.FindTag(tag);
+            if (state < 0) {
+                continue;
+            }
+            const Graph::State& found = layer.states[static_cast<std::size_t>(state)];
+            const ModelAnimation* animation = FindAnimation(*skeleton, found.points.front().animation);
+            const float speed = found.speed * animator.speed;
+            return animation && speed > 0.0f ? animation->duration / speed : 0.0f;
+        }
+        return 0.0f;
     }
 }

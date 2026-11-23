@@ -586,22 +586,35 @@ namespace Flux {
         bool passThrough = false;
     };
 
-    // Une animation en cours dans un animateur : un état de son graphe, son cycle et sa part dans la pose.
-    struct AnimatorLayer
+    // Un fondu en cours dans une couche d'un animateur : un état de son graphe, son cycle et sa part dans la pose.
+    struct AnimatorFade
     {
-        std::int16_t state = -1; // dans le graphe ; -1 : l'animation de l'animateur (sans graphe)
+        std::int16_t state = -1; // dans la couche du graphe ; -1 : l'animation de l'animateur (sans graphe)
         float phase = 0.0f;      // avancée de son cycle, de 0 à 1 (au-delà pour une animation bouclée)
         float rate = 0.0f;       // cycles par seconde au dernier pas : gardée pendant qu'elle s'efface
         float blend = 0.0f;      // valeur du paramètre de mélange au dernier pas, gardée de même
-        float fade = 1.0f;       // fondu d'entrée, de 0 à 1 : part prise sur les couches d'avant
+        float fade = 1.0f;       // fondu d'entrée, de 0 à 1 : part prise sur les fondus d'avant
         float fadeRate = 0.0f;   // avancée du fondu par seconde (1 / durée de la transition)
     };
 
-    // Animation d'un modèle et sa part dans la pose, calculée par la simulation (Animator::Update) et appliquée au
+    // Lecture d'une couche du graphe (corps entier, haut du corps…) : ses fondus en cours, du plus ancien au plus
+    // récent, et sa part sur les couches d'avant.
+    struct AnimatorLayer
+    {
+        static constexpr std::size_t MaxFades = 4; // au-delà, le plus ancien est lâché
+
+        std::array<AnimatorFade, MaxFades> fades{};
+        std::uint8_t fadeCount = 0;
+        float weight = 1.0f;         // part atteinte, de 0 à 1, en route vers celle du graphe
+        std::int16_t maskNode = -1;  // os de son masque dans ModelSkeleton::nodes ; -1 : tout le corps
+    };
+
+    // Animation d'un modèle et sa part dans sa couche, calculée par la simulation (Animator::Update) et appliquée au
     // rendu.
     struct AnimationClipWeight
     {
         std::int16_t animation = -1; // indice dans ModelSkeleton::animations
+        std::uint8_t layer = 0;      // couche de l'animateur
         bool loop = true;
         float time = 0.0f; // secondes
         float weight = 0.0f;
@@ -616,20 +629,20 @@ namespace Flux {
 
     struct AnimatorComponent
     {
-        static constexpr std::size_t MaxLayers = 4; // fondus en cours à la fois ; au-delà, le plus ancien est lâché
-        static constexpr std::size_t MaxClips = 8;  // deux animations mélangées par couche
+        static constexpr std::size_t MaxLayers = 4;  // AnimationGraph::MaxLayers
+        static constexpr std::size_t MaxClips = 32;  // deux animations mélangées par fondu
 
         std::string graph{};     // fichier .fluxanim ; vide : seulement animation
         std::string animation{}; // sans graphe : nom dans le fichier du modèle (vide : la première)
         float speed = 1.0f;      // vitesse de lecture (2 : deux fois plus vite)
         bool loop = true;        // sans graphe : sinon, s'arrête sur sa dernière image
 
-        // Lecture en cours (non enregistrée). Couches : la plus ancienne d'abord, chacune fondue sur celles d'avant.
+        // Lecture en cours (non enregistrée), couche par couche.
         std::array<AnimatorLayer, MaxLayers> layers{};
         std::uint8_t layerCount = 0;
         std::array<float, 16> parameters{}; // valeurs des paramètres du graphe (AnimationGraph::MaxParameters)
-        bool started = false;               // paramètres et premier état posés
-        // Sortie pour le rendu : animations pondérées (poids de somme 1), vide avant le premier pas.
+        bool started = false;               // paramètres et premiers états posés
+        // Sortie pour le rendu : animations pondérées, de somme 1 dans chaque couche, vide avant le premier pas.
         std::array<AnimationClipWeight, MaxClips> clips{};
         std::uint8_t clipCount = 0;
     };

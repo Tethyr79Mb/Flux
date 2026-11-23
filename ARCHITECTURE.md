@@ -480,17 +480,21 @@ planète donne directement le sien comme indice d'instance.
 
 ## Animation
 
-- Graphe d'animation (`.fluxanim`, `ParseAnimationGraph`) : paramètres (nombres), états (une animation, ou plusieurs
-  mélangées selon un paramètre, cycles calés en phase), transitions à conditions (`speed > 0.1`), essayées dans
-  l'ordre du fichier, avec fondu. Le graphe du personnage est un asset du jeu (`Animations/Personnage.fluxanim`) ; le
-  moteur ne pose que les paramètres d'un personnage (`AnimationParameters` : vitesse, allure, temps en l'air, siège),
-  le jeu les siens (`Animator::SetParameter`).
+- Graphe d'animation (`.fluxanim`, `ParseAnimationGraph`) : paramètres (nombres) et couches. La première couche
+  (états à la racine du fichier) anime tout le corps ; les suivantes (`"layers"`, 3 au plus) jouent par-dessus sur
+  les os de leur masque (un os et ses descendants), pour leur part (`"weight"` : nombre ou paramètre, atteinte en
+  `"fade"` secondes). Chaque couche a ses états (une animation, ou plusieurs mélangées selon un paramètre, cycles
+  calés en phase) et ses transitions à conditions (`speed > 0.1`), essayées dans l'ordre du fichier, avec fondu. Le
+  graphe du personnage est un asset du jeu (`Animations/Personnage.fluxanim`) ; le moteur ne pose que les paramètres
+  d'un personnage (`AnimationParameters` : vitesse, allure, temps en l'air, siège), le jeu les siens
+  (`Animator::SetParameter`).
 - Simulation (FluxSim, aussi le serveur) : `AnimationLibrary` lit squelettes et graphes à la première demande
-  (`Simulation::GetAnimations`, vidée à chaque `Start`) ; `Animator::Update` tient une pile de 4 couches au plus
-  (fondus en cours, la plus récente prend sa part sur les autres : un fondu interrompu ne saute pas) et en tire
-  jusqu'à 8 animations pondérées. Les sièges lisent la durée des états étiquetés `sitDown` et `standUp`.
-- Rendu : `MeshRenderer::Pose` échantillonne ces animations (`PoseEvaluator::EvaluateBlend` : moyenne pondérée,
-  rotations en nlerp) et envoie les matrices des os au GPU.
+  (`Simulation::GetAnimations`, vidée à chaque `Start`) ; `Animator::Update` tient pour chaque couche une pile de 4
+  fondus au plus (le plus récent prend sa part sur les autres : un fondu interrompu ne saute pas) et en tire jusqu'à
+  32 animations pondérées, marquées de leur couche. Les sièges lisent la durée des états étiquetés `sitDown` et
+  `standUp`.
+- Rendu : `MeshRenderer::Pose` échantillonne ces animations (`PoseEvaluator::EvaluateLayers` : moyenne pondérée dans
+  chaque couche, rotations en nlerp, puis chaque couche sur les os de son masque) et envoie les matrices des os au GPU.
 
 ## Armes (`Game::Weapons`) et projectiles (`Projectiles`)
 
@@ -698,7 +702,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
 | `*.scene.json` | scène (`flux.scene` v2 : exemplaires de prefabs) |
 | `*.prefab.json` | prefab (`flux.prefab`, même forme qu'une scène, une seule racine) |
 | `*.fluxui` | interface du jeu (`flux.ui` v1) |
-| `*.fluxanim` | graphe d'animation (`flux.anim` v1 : paramètres, états, transitions) |
+| `*.fluxanim` | graphe d'animation (`flux.anim` v1 : paramètres, couches, états, transitions) |
 | `Game.fluxproject` | projet : nom, assets, scène de démarrage |
 | `Touches.json` | touches réassignées (à côté de l'exe) |
 | `Sauvegardes/rapide.scene.json`, `rapide.joueur.json`, `rapide.depart.json` | sauvegarde rapide (à côté de l'exe) : la scène en cours, ouvrable dans l'éditeur, et le siège du joueur ; reprise au lancement du jeu (`Engine::ResumeQuickSave`), effacée par F7. `rapide.depart.json` est la scène d'où la partie était partie, telle qu'au chargement : si l'éditeur l'a modifiée depuis, sa version actuelle est chargée et fusionnée avec la partie (`SceneMerge::ApplyChanges`). `rapide.joueur.json` garde aussi l'état des systèmes du jeu (`Engine::AddGameSaveData` : la mission en cours, par identifiants) |
