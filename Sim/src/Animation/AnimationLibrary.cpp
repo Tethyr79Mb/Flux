@@ -5,6 +5,7 @@
 #include "Flux/Platform/Filesystem.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <utility>
 #include <vector>
@@ -42,68 +43,146 @@ namespace Flux {
     }
 
     std::vector<ModelAnimation> RetargetAnimations(const ModelSkeleton& source, const ModelSkeleton& target) {
-        // Nœud de target pour chaque nœud de source, par nom, et profondeur de chaque nœud de source.
+        // Nœud de target pour chaque nœud de source, par nom ; et l'inverse.
         std::vector<int> nodes(source.nodes.size(), -1);
-        std::vector<int> depths(source.nodes.size(), 0);
+        std::vector<int> sources(target.nodes.size(), -1);
         for (std::size_t i = 0; i < source.nodes.size(); ++i) {
             nodes[i] = FindNode(target, source.nodes[i].name);
+            if (nodes[i] >= 0 && sources[static_cast<std::size_t>(nodes[i])] < 0) {
+                sources[static_cast<std::size_t>(nodes[i])] = static_cast<int>(i);
+            }
+        }
+        // Les hanches : le nœud recâblé le plus haut dont la place est animée (sinon le plus haut recâblé). Les
+        // rotations sont comparées dans le repère de son parent (l'armature) : celui-ci peut différer d'un fichier
+        // à l'autre (unité, axes, nœud racine en plus).
+        std::vector<int> depths(source.nodes.size(), 0);
+        for (std::size_t i = 0; i < source.nodes.size(); ++i) {
             const int parent = source.nodes[i].parent;
             depths[i] = parent >= 0 ? depths[static_cast<std::size_t>(parent)] + 1 : 0; // parents avant enfants
         }
-        std::vector<ModelAnimation> animations;
-        animations.reserve(source.animations.size());
+        int hips = -1;
         for (const ModelAnimation& animation : source.animations) {
-            // Les hanches : le nœud recâblé le plus haut dont la place est animée.
-            int hips = -1;
             for (const AnimationChannel& channel : animation.channels) {
                 if (channel.path == AnimationPath::Translation && channel.node < nodes.size() && nodes[channel.node] >= 0
                     && (hips < 0 || depths[channel.node] < depths[static_cast<std::size_t>(hips)])) {
                     hips = static_cast<int>(channel.node);
                 }
             }
+        }
+        for (std::size_t i = 0; i < source.nodes.size() && hips < 0; ++i) {
+            hips = nodes[i] >= 0 ? static_cast<int>(i) : -1;
+        }
+        if (hips < 0) {
+            return {};
+        }
+        const auto isUnder = [](const ModelSkeleton& skeleton, int node, int ancestor) {
+            for (; node >= 0; node = skeleton.nodes[static_cast<std::size_t>(node)].parent) {
+                if (node == ancestor) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        const int targetHips = nodes[static_cast<std::size_t>(hips)];
+        // Rotation de chaque nœud dans le repère du parent des hanches, d'après des rotations locales (0 au-dessus).
+        const auto globals = [&isUnder](const ModelSkeleton& skeleton, int top, const auto& local, std::vector<Math::Quaternionf>& out) {
+            out.assign(skeleton.nodes.size(), Math::Quaternionf{});
+            for (std::size_t i = 0; i < skeleton.nodes.size(); ++i) {
+                if (!isUnder(skeleton, static_cast<int>(i), top)) {
+                    continue;
+                }
+                const int parent = skeleton.nodes[i].parent;
+                out[i] = static_cast<int>(i) == top || parent < 0 ? local(i) : out[static_cast<std::size_t>(parent)] * local(i);
+            }
+        };
+        std::vector<Math::Quaternionf> sourceRest;
+        std::vector<Math::Quaternionf> targetRest;
+        globals(source, hips, [&](std::size_t i) { return source.nodes[i].rotation; }, sourceRest);
+        globals(target, targetHips, [&](std::size_t i) { return target.nodes[i].rotation; }, targetRest);
+
+        const SkeletonNode& fromHips = source.nodes[static_cast<std::size_t>(hips)];
+        const SkeletonNode& toHips = target.nodes[static_cast<std::size_t>(targetHips)];
+        const float fromHeight = Math::Length(fromHips.translation);
+        const float hipsRatio = fromHeight > 1.0e-6f ? Math::Length(toHips.translation) / fromHeight : 1.0f;
+
+        // Échantillonnée à 30 images par seconde (celles de Mixamo) : chaque os de target prend la même rotation
+        // que dans source par rapport à son repos, dans le repère de l'armature (indépendant des axes propres des
+        // os, qui changent selon le logiciel d'export) ; les hanches se déplacent à l'échelle de target ; les autres
+        // os gardent leur longueur.
+        constexpr float Rate = 30.0f;
+        PoseEvaluator evaluator;
+        std::vector<Math::Quaternionf> sourcePose;
+        std::vector<Math::Quaternionf> targetPose;
+        std::vector<ModelAnimation> animations;
+        animations.reserve(source.animations.size());
+        for (const ModelAnimation& animation : source.animations) {
+            const std::size_t frames = static_cast<std::size_t>(std::ceil(std::max(animation.duration, 0.0f) * Rate)) + 1;
             ModelAnimation& copy = animations.emplace_back();
             copy.name = animation.name;
             copy.duration = animation.duration;
+            const bool movesHips = std::ranges::any_of(animation.channels, [&](const AnimationChannel& channel) {
+                return static_cast<int>(channel.node) == hips && channel.path == AnimationPath::Translation;
+            });
+            // Une courbe par os recâblé sous les hanches (sa rotation dépend de celles de tous ses ancêtres).
+            std::vector<int> channelOf(target.nodes.size(), -1);
+            for (std::size_t t = 0; t < target.nodes.size(); ++t) {
+                if (sources[t] >= 0 && isUnder(target, static_cast<int>(t), targetHips)) {
+                    channelOf[t] = static_cast<int>(copy.channels.size());
+                    copy.channels.push_back({static_cast<std::uint32_t>(t), AnimationPath::Rotation, AnimationInterpolation::Linear, {}, {}});
+                }
+            }
+            const std::size_t hipsChannel = copy.channels.size(); // si movesHips
+            if (movesHips) {
+                copy.channels.push_back({static_cast<std::uint32_t>(targetHips), AnimationPath::Translation, AnimationInterpolation::Linear, {}, {}});
+            }
+            for (AnimationChannel& channel : copy.channels) {
+                channel.times.reserve(frames);
+                channel.values.reserve(frames * (channel.path == AnimationPath::Rotation ? 4 : 3));
+            }
+            for (std::size_t frame = 0; frame < frames; ++frame) {
+                const float time = std::min(static_cast<float>(frame) / Rate, animation.duration);
+                evaluator.Evaluate(source, AnimationSample{&animation, time, false});
+                const std::span<const NodePose> local = evaluator.GetLocalPoses();
+                globals(source, hips, [&](std::size_t i) { return local[i].rotation; }, sourcePose);
+                // Rotations de target dans le repère de l'armature, parents avant enfants : un os sans pareil dans
+                // source suit son parent à son repos.
+                targetPose.assign(target.nodes.size(), Math::Quaternionf{});
+                for (std::size_t t = 0; t < target.nodes.size(); ++t) {
+                    if (!isUnder(target, static_cast<int>(t), targetHips)) {
+                        continue;
+                    }
+                    const int parent = target.nodes[t].parent;
+                    const Math::Quaternionf above = static_cast<int>(t) == targetHips || parent < 0 ? Math::Quaternionf{}
+                                                                                               : targetPose[static_cast<std::size_t>(parent)];
+                    if (sources[t] < 0) {
+                        targetPose[t] = above * target.nodes[t].rotation;
+                        continue;
+                    }
+                    const auto s = static_cast<std::size_t>(sources[t]);
+                    targetPose[t] = Math::Normalize(sourcePose[s] * sourceRest[s].Conjugate() * targetRest[t]);
+                    const Math::Quaternionf rotation = Math::Normalize(above.Conjugate() * targetPose[t]);
+                    AnimationChannel& channel = copy.channels[static_cast<std::size_t>(channelOf[t])];
+                    channel.times.push_back(time);
+                    channel.values.insert(channel.values.end(), {rotation.x, rotation.y, rotation.z, rotation.w});
+                }
+                if (movesHips) {
+                    const Math::Vector3f moved = toHips.translation + (local[static_cast<std::size_t>(hips)].translation - fromHips.translation) * hipsRatio;
+                    AnimationChannel& channel = copy.channels[hipsChannel];
+                    channel.times.push_back(time);
+                    channel.values.insert(channel.values.end(), {moved.x, moved.y, moved.z});
+                }
+            }
+            // Pièces qui coulissent (os de même longueur dans les deux : le même squelette) : leurs courbes telles quelles.
             for (const AnimationChannel& channel : animation.channels) {
-                if (channel.node >= nodes.size() || nodes[channel.node] < 0 || channel.path == AnimationPath::Scale) {
+                if (channel.path != AnimationPath::Translation || static_cast<int>(channel.node) == hips || channel.node >= nodes.size()
+                    || nodes[channel.node] < 0) {
                     continue;
                 }
                 const SkeletonNode& from = source.nodes[channel.node];
                 const SkeletonNode& to = target.nodes[static_cast<std::size_t>(nodes[channel.node])];
-                const bool cubic = channel.interpolation == AnimationInterpolation::CubicSpline;
-                if (channel.path == AnimationPath::Rotation) {
-                    // Même écart à la pose de repos : repos de target × (repos de source)⁻¹ × rotation. Linéaire en
-                    // les quatre nombres : vaut aussi pour les tangentes d'une spline.
-                    const Math::Quaternionf offset = to.rotation * from.rotation.Conjugate();
-                    AnimationChannel& moved = copy.channels.emplace_back(channel);
-                    moved.node = static_cast<std::uint32_t>(nodes[channel.node]);
-                    for (std::size_t v = 0; v + 3 < moved.values.size(); v += 4) {
-                        const Math::Quaternionf q = offset * Math::Quaternionf{moved.values[v], moved.values[v + 1], moved.values[v + 2], moved.values[v + 3]};
-                        moved.values[v] = q.x;
-                        moved.values[v + 1] = q.y;
-                        moved.values[v + 2] = q.z;
-                        moved.values[v + 3] = q.w;
-                    }
-                    continue;
-                }
-                const float fromLength = Math::Length(from.translation);
-                const float toLength = Math::Length(to.translation);
-                const bool sameBone = Math::Length(from.translation - to.translation) <= 0.01f * std::max(toLength, 1.0e-3f);
-                if (static_cast<int>(channel.node) != hips && !sameBone) {
-                    continue; // l'os garde sa longueur
-                }
-                // Hanches : écart au repos mis à l'échelle de target (même rapport pour un autre personnage, une autre
-                // unité ou une armature à l'échelle 0,01) ; un os identique : tel quel.
-                const float ratio = sameBone || fromLength < 1.0e-6f ? 1.0f : toLength / fromLength;
-                AnimationChannel& moved = copy.channels.emplace_back(channel);
-                moved.node = static_cast<std::uint32_t>(nodes[channel.node]);
-                for (std::size_t v = 0; v + 2 < moved.values.size(); v += 3) {
-                    const bool tangent = cubic && (v / 3) % 3 != 1; // spline : tangente d'entrée, valeur, tangente de sortie
-                    const Math::Vector3f value{moved.values[v], moved.values[v + 1], moved.values[v + 2]};
-                    const Math::Vector3f scaled = tangent ? value * ratio : to.translation + (value - from.translation) * ratio;
-                    moved.values[v] = scaled.x;
-                    moved.values[v + 1] = scaled.y;
-                    moved.values[v + 2] = scaled.z;
+                if (Math::Length(from.translation - to.translation) <= 0.01f * std::max(Math::Length(to.translation), 1.0e-3f)) {
+                    copy.channels.push_back(channel);
+                    copy.channels.back().node = static_cast<std::uint32_t>(nodes[channel.node]);
                 }
             }
         }

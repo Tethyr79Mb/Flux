@@ -10,6 +10,7 @@
 #include "Flux/Assets/Model.hpp"
 #include "Flux/Scene/Scene.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -424,8 +425,8 @@ namespace {
 
         // Recâblage par nom : la queue, absente du modèle, est laissée.
         const std::vector<ModelAnimation> moved = RetargetAnimations(file, model);
-        CHECK(moved.size() == 2 && moved[0].channels.size() == 2 && moved[0].duration == 2.0f);
-        CHECK(moved[0].channels[0].node == 2 && moved[0].channels[1].node == 1);
+        CHECK(moved.size() == 2 && moved[0].duration == 2.0f);
+        CHECK(std::ranges::none_of(moved[0].channels, [](const AnimationChannel& channel) { return channel.node == 0; })); // l'armature, au-dessus des hanches
 
         // Autre personnage (Y Bot), dans une autre unité : hanches à 2 au lieu de 1, torse plus long et tourné au repos.
         {
@@ -444,12 +445,14 @@ namespace {
             bow.channels.push_back({1, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {posed.x, posed.y, posed.z, posed.w}});
             tall.animations.push_back(bow);
             const std::vector<ModelAnimation> fitted = RetargetAnimations(tall, small);
-            CHECK(fitted.size() == 1 && fitted[0].channels.size() == 2); // le torse garde sa longueur
-            const std::vector<float>& hips = fitted[0].channels[0].values;
-            CHECK(fitted[0].channels[0].node == 0 && Near({hips[0], hips[1], hips[2]}, {0.2f, 1.1f, 0}));
-            const std::vector<float>& spin = fitted[0].channels[1].values;
-            CHECK(fitted[0].channels[1].path == AnimationPath::Rotation
-                  && std::abs(std::abs(Math::Dot(Math::Quaternionf{spin[0], spin[1], spin[2], spin[3]}, bend)) - 1.0f) < 1.0e-5f);
+            CHECK(fitted.size() == 1);
+            // Le torse garde sa longueur ; les hanches se déplacent à l'échelle (moitié) ; le torse tourne comme dans
+            // le fichier, vu de l'armature (la même rotation dans l'espace, quels que soient les axes propres des os).
+            PoseEvaluator fittedPose;
+            fittedPose.Evaluate(small, AnimationSample{&fitted[0], 0.0, false});
+            CHECK(Near(fittedPose.GetLocalPoses()[0].translation, {0.2f, 1.1f, 0}) && Near(fittedPose.GetLocalPoses()[1].translation, {0, 0.3f, 0}));
+            const Math::Quaternionf expected = rest * bend * rest.Conjugate();
+            CHECK(std::abs(std::abs(Math::Dot(fittedPose.GetLocalPoses()[1].rotation, expected)) - 1.0f) < 1.0e-4f);
         }
 
         AnimationLibrary library;

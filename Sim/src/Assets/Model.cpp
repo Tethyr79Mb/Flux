@@ -696,8 +696,10 @@ namespace Flux {
                 }
                 if (animated) {
                     LoadAnimations();
-                    if (model.skinVertices.empty()) {
-                        model.skeleton = {}; // aucun maillage animé (tous ignorés) : un modèle vide reste statique
+                    // Aucun maillage animé (tous ignorés) : le modèle reste statique ; sans aucun maillage, c'est un
+                    // fichier d'animations seules (export Mixamo « Without Skin ») : son squelette sert.
+                    if (model.skinVertices.empty() && !model.vertices.empty()) {
+                        model.skeleton = {};
                     }
                 }
                 // Boîte de la pose de repos ; un modèle animé est d'abord mis dans cette pose.
@@ -846,6 +848,11 @@ namespace Flux {
         Loader loader{.gltf = *gltf, .directory = path.parent_path(), .images = images};
         loader.Load();
         if (loader.model.indices.empty()) {
+            // Fichier d'animations seules (export Mixamo « Without Skin ») : son squelette et ses courbes servent
+            // (AnimationGraph::files) ; rien à préparer pour le rendu.
+            if (!loader.model.skeleton.animations.empty()) {
+                return std::move(loader.model);
+            }
             return std::unexpected("« " + fileName + " » : aucun triangle");
         }
         PrepareModel(loader.model, images);
