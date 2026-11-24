@@ -576,6 +576,9 @@ namespace FluxEditor {
             for (const auto& [key, text] : unknown->components) {
                 ui.TextDisabled("« " + key + " » : type inconnu, conservé tel quel");
             }
+            for (const auto& [key, text] : unknown->fields) {
+                ui.TextDisabled("« " + key + " » : champs inconnus de ce moteur, conservés tels quels");
+            }
         }
     }
 

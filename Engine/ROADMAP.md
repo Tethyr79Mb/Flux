@@ -159,8 +159,9 @@ Station, vaisseau ou décor : le moteur s'adapte au modèle, sans fusion des pi�
 ### Monde, scène, physique
 - ✅ Scène EnTT, secteurs int64 + positions double (échelle galaxie), sauvegarde JSON (`flux.scene`).
 - ✅ Composants enregistrés une fois : inspecteur et sauvegarde générés.
-- ✅ Chargement qui ne bloque jamais sur un fichier abîmé (Bruno, 2026-10-27) : composant illisible (champ inconnu
-  d'une version plus récente, valeur invalide) pas chargé mais gardé tel quel et réécrit ; transformation lue champ par
+- ✅ Chargement qui ne bloque jamais sur un fichier abîmé (Bruno, 2026-10-27) : composant illisible (valeur invalide)
+  pas chargé mais gardé tel quel et réécrit ; champ inconnu (autre branche, moteur plus récent) : composant chargé
+  quand même, le champ gardé et réécrit (2026-11-24) ; transformation lue champ par
   champ ; exemplaire dont le prefab est introuvable gardé vide avec ses différences ; entité sans parent mise à la
   racine ; un avertissement au journal pour chacun. Seul un fichier inutilisable (pas du JSON, format plus récent,
   identifiants en double, boucle) est refusé. Scène de démarrage absente ou refusée : éditeur et jeu démarrent sur une

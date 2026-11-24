@@ -275,6 +275,23 @@ namespace Flux::SceneSerializer {
             return fields;
         }
 
+        // Champs inconnus remis dans leur composant, s'il est toujours là (retiré : ils partent avec lui) et s'il ne
+        // les a pas entre-temps.
+        void AddUnknownFields(const std::vector<std::pair<std::string, std::string>>& fields, Json& json) {
+            for (const auto& [key, text] : fields) {
+                const auto component = json.find(key);
+                if (component == json.end() || !component->is_object()) {
+                    continue;
+                }
+                const Json parsed = Json::parse(text); // gardé : items() ne prolonge pas la vie d'un temporaire
+                for (const auto& [field, value] : parsed.items()) {
+                    if (!component->contains(field)) {
+                        (*component)[field] = value;
+                    }
+                }
+            }
+        }
+
         // Composants de l'entité, sous leur clé : enregistrés dans l'ordre d'enregistrement (le fichier ne change
         // pas d'une sauvegarde à l'autre), puis les inconnus gardés tels quels.
         void WriteComponents(const Scene& scene, const ComponentRegistry& components, Entity entity, Json& json) {
@@ -290,6 +307,7 @@ namespace Flux::SceneSerializer {
                         json[key] = Json::parse(text);
                     }
                 }
+                AddUnknownFields(unknown->fields, json);
             }
         }
 
@@ -398,6 +416,7 @@ namespace Flux::SceneSerializer {
                     for (const auto& [key, value] : data.unknown.components) {
                         json[key] = Json::parse(value);
                     }
+                    AddUnknownFields(data.unknown.fields, json);
                     baseline.emplace(data.id, Baseline{data.name, std::move(json)});
                 }
             } catch (const std::exception&) {
@@ -581,8 +600,10 @@ namespace Flux::SceneSerializer {
         // plus récente du moteur ou d'une autre branche), valeur invalide. Les champs absents gardent leur valeur.
         // Avec `skipped`, un champ illisible y est noté et garde sa valeur, sans erreur.
         // Avec `moved`, un champ déplacé vers un autre composant y est noté ; sans lui, il est ignoré.
+        // Avec `unknown`, un champ inconnu y est gardé tel quel au lieu de lever une erreur.
         void ReadComponentFields(const ComponentInfo& info, const Json& value, void* instance,
-                                 std::vector<std::string>* skipped = nullptr, MovedValues* moved = nullptr) {
+                                 std::vector<std::string>* skipped = nullptr, MovedValues* moved = nullptr,
+                                 Json* unknown = nullptr) {
             if (!value.is_object()) {
                 throw std::runtime_error("un objet { ... } est attendu");
             }
@@ -599,6 +620,10 @@ namespace Flux::SceneSerializer {
                     if (moved && fieldValue.is_number()) {
                         moved->emplace_back(movedField, fieldValue.get<double>());
                     }
+                    continue;
+                }
+                if (!field && unknown) {
+                    (*unknown)[fieldKey] = fieldValue;
                     continue;
                 }
                 try {
@@ -642,6 +667,28 @@ namespace Flux::SceneSerializer {
             data.unknown.components.emplace_back(key, value.dump());
         }
 
+        // Champs inconnus d'un composant chargé (scène d'une autre branche ou d'un moteur plus récent) : le composant
+        // reste utilisable, les champs sont gardés et réécrits à l'enregistrement. Un avertissement les nomme.
+        void KeepUnknownFields(EntityData& data, const std::string& key, Json unknown, Warnings* warnings) {
+            if (unknown.empty()) {
+                return;
+            }
+            auto entry = std::ranges::find(data.unknown.fields, key, [](const auto& f) { return f.first; });
+            std::string names;
+            for (const auto& [field, value] : unknown.items()) {
+                names += (names.empty() ? "« " : ", « ") + field + " »";
+            }
+            Warn(warnings, std::format("« {} », {} : champ(s) {} inconnu(s) dans ce moteur, gardé(s) tel(s) quel(s)",
+                                       Label(data), key, names));
+            if (entry != data.unknown.fields.end()) {
+                Json merged = Json::parse(entry->second);
+                merged.update(unknown);
+                entry->second = merged.dump();
+            } else {
+                data.unknown.fields.emplace_back(key, unknown.dump());
+            }
+        }
+
         // Valeurs des champs déplacés : dans le composant cible, ajouté s'il manque et si le champ le demande.
         void ApplyMoved(const ComponentRegistry& components, EntityData& data, const MovedValues& moved) {
             for (const auto& [field, value] : moved) {
@@ -683,6 +730,7 @@ namespace Flux::SceneSerializer {
                         const std::string component = removed.get<std::string>();
                         std::erase_if(data.components, [&](const ComponentData& c) { return c.info->key == component; });
                         std::erase_if(data.unknown.components, [&](const auto& c) { return c.first == component; });
+                        std::erase_if(data.unknown.fields, [&](const auto& f) { return f.first == component; });
                     }
                     continue;
                 }
@@ -698,8 +746,9 @@ namespace Flux::SceneSerializer {
                     continue;
                 }
                 // Vérifié à part d'abord : une erreur ne laisse pas le composant du prefab à moitié changé.
+                Json unknown = Json::object();
                 try {
-                    ReadComponentFields(*info, value, info->create().get());
+                    ReadComponentFields(*info, value, info->create().get(), nullptr, nullptr, &unknown);
                 } catch (const std::exception& error) {
                     std::erase_if(data.components, [&](const ComponentData& c) { return c.info == info; });
                     KeepUnreadable(data, key, value, error.what(), warnings);
@@ -711,8 +760,11 @@ namespace Flux::SceneSerializer {
                     component = data.components.end() - 1;
                 }
                 MovedValues moved;
-                ReadComponentFields(*info, value, component->instance.get(), nullptr, &moved);
+                ReadComponentFields(*info, value, component->instance.get(), nullptr, &moved, &unknown);
                 ApplyMoved(components, data, moved);
+                if (!unknown.empty()) {
+                    KeepUnknownFields(data, key, std::move(unknown), warnings);
+                }
             }
         }
 
@@ -799,12 +851,14 @@ namespace Flux::SceneSerializer {
                     continue;
                 }
                 MovedValues entityMoved;
+                Json unknown = Json::object();
                 try {
-                    ReadComponentFields(*info, value, component.instance.get(), nullptr, &entityMoved);
+                    ReadComponentFields(*info, value, component.instance.get(), nullptr, &entityMoved, &unknown);
                 } catch (const std::exception& error) {
                     KeepUnreadable(data, key, value, error.what(), warnings);
                     continue;
                 }
+                KeepUnknownFields(data, key, std::move(unknown), warnings);
                 data.components.push_back(std::move(component));
                 std::ranges::move(entityMoved, std::back_inserter(moved));
             }
@@ -865,7 +919,7 @@ namespace Flux::SceneSerializer {
                 for (const ComponentData& component : data.components) {
                     component.info->emplace(scene.GetRegistry(), entity, component.instance.get());
                 }
-                if (!data.unknown.components.empty()) {
+                if (!data.unknown.components.empty() || !data.unknown.fields.empty()) {
                     scene.Add<UnknownComponentsComponent>(entity, std::move(data.unknown));
                 }
                 if (!data.prefab.empty()) {
@@ -1074,7 +1128,7 @@ namespace Flux::SceneSerializer {
                     info.remove(scene.GetRegistry(), entity);
                 }
             }
-            if (data.unknown.components.empty()) {
+            if (data.unknown.components.empty() && data.unknown.fields.empty()) {
                 scene.Remove<UnknownComponentsComponent>(entity);
             } else {
                 scene.Add<UnknownComponentsComponent>(entity, std::move(data.unknown));

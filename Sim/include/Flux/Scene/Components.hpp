@@ -771,8 +771,11 @@ namespace Flux {
 
     // Composants d'un fichier de scène dont le type n'est pas enregistré (module de jeu absent ou ancien) :
     // gardés tels quels (clé, texte JSON) et réécrits à la sauvegarde, pour ne jamais perdre de données.
+    // `fields` : champs inconnus d'un composant connu (scène enregistrée sur une autre branche ou un moteur plus
+    // récent) ; le composant est chargé sans eux, ils sont remis à la sauvegarde (clé du composant, objet JSON).
     struct UnknownComponentsComponent
     {
         std::vector<std::pair<std::string, std::string>> components;
+        std::vector<std::pair<std::string, std::string>> fields;
     };
 }

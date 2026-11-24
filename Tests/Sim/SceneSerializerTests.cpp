@@ -160,10 +160,10 @@ bool RunSceneSerializerTests() {
         CHECK(SameScene(scene, loaded));
     }
 
-    // Composant illisible (champ inconnu, types incorrects, valeur d'énumération inconnue, pas un objet) : le reste
-    // est chargé, lui pas ; gardé tel quel et réécrit à l'enregistrement, avec un avertissement qui dit pourquoi.
+    // Composant illisible (types incorrects, valeur d'énumération inconnue, pas un objet) : le reste est chargé, lui
+    // pas ; gardé tel quel et réécrit à l'enregistrement, avec un avertissement qui dit pourquoi.
     const char* unreadable[] = {
-        R"({"colour": 1})", R"({"flag": 1})", R"({"count": 1.5})", R"({"count": 3000000000})", R"({"label": 3})",
+        R"({"flag": 1})", R"({"count": 1.5})", R"({"count": 3000000000})", R"({"label": 3})",
         R"({"direction": [1, "2", 3]})", R"({"mood": "joyeux"})", "5",
     };
     for (const char* component : unreadable) {
@@ -186,9 +186,32 @@ bool RunSceneSerializerTests() {
     }
     // Ajouté de nouveau dans l'éditeur : la version à jour remplace l'illisible.
     CHECK(SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1, "entities": [
-        {"id": "0000000000000001", "test": {"colour": 1}}]})").has_value());
+        {"id": "0000000000000001", "test": {"label": 3}}]})").has_value());
     loaded.Add<TestComponent>(loaded.FindById(Uuid{1})).count = 4;
-    CHECK(SceneSerializer::SaveToString(loaded, components).find("colour") == std::string::npos);
+    CHECK(SceneSerializer::SaveToString(loaded, components).find(R"("label": 3)") == std::string::npos);
+
+    // Champ inconnu (scène enregistrée sur une autre branche) : le composant est chargé quand même, avec un
+    // avertissement qui nomme le champ ; le champ est gardé et réécrit à l'enregistrement, tant que le composant reste.
+    {
+        std::vector<LogEntry> logged;
+        const std::uint64_t before = Log::Read(0, logged);
+        CHECK(SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1, "entities": [
+            {"id": "0000000000000001", "test": {"count": 7, "colour": [1, 2]}}]})").has_value());
+        const Entity box = loaded.FindById(Uuid{1});
+        const auto* test = loaded.TryGet<TestComponent>(box);
+        CHECK(test != nullptr && test->count == 7);
+        logged.clear();
+        Log::Read(before, logged);
+        CHECK(!logged.empty() && logged.back().level == LogLevel::Warning
+              && logged.back().text.find("« colour »") != std::string::npos);
+        const std::string resaved = SceneSerializer::SaveToString(loaded, components);
+        CHECK(resaved.find(R"("colour": [1, 2])") != std::string::npos && resaved.find(R"("count": 7)") != std::string::npos);
+        CHECK(SceneSerializer::LoadFromString(loaded, components, resaved).has_value());
+        CHECK(SceneSerializer::SaveToString(loaded, components) == resaved);
+        // Composant retiré dans l'éditeur : ses champs inconnus partent avec lui.
+        loaded.Remove<TestComponent>(loaded.FindById(Uuid{1}));
+        CHECK(SceneSerializer::SaveToString(loaded, components).find("colour") == std::string::npos);
+    }
     // Modèle 3D d'un type inconnu, position à deux nombres : ces composants seuls manquent.
     CHECK(SceneSerializer::LoadFromString(loaded, components, R"({"format": "flux.scene", "version": 1, "entities": [
         {"id": "0000000000000001", "meshRenderer": {"mesh": "théière"}, "transform": {"position": [1, 2]}}]})").has_value());
@@ -224,7 +247,9 @@ bool RunSceneSerializerTests() {
     CHECK(SceneSerializer::LoadFromString(loaded, components, std::format(R"({{"format": "flux.scene",
         "version": 2, "engine": {}, "entities": [{{"id": "0000000000000001", "test": {{"count": 2, "colour": 1}},
         "transform": {{"position": [1, 2, 3], "wobble": 1}}}}]}})", GameModuleApiVersion + 1)).has_value());
-    CHECK(loaded.GetEntityCount() == 1 && loaded.TryGet<TestComponent>(loaded.FindById(Uuid{1})) == nullptr);
+    const auto* newer = loaded.TryGet<TestComponent>(loaded.FindById(Uuid{1}));
+    CHECK(loaded.GetEntityCount() == 1 && newer != nullptr && newer->count == 2);
+    CHECK(SceneSerializer::SaveToString(loaded, components).find(R"("colour": 1)") != std::string::npos);
     // La transformation, présente sur toute entité, n'est jamais mise de côté : seul son champ inconnu est ignoré.
     CHECK(loaded.Get<TransformComponent>(loaded.FindById(Uuid{1})).position == (Math::Vector3d{1.0, 2.0, 3.0}));
     CHECK(SceneSerializer::LoadFromString(loaded, components, saved).has_value());
