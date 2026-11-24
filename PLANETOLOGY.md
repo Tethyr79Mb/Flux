@@ -312,7 +312,7 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
   sommet, en étoile vus de dessus) ; pas de rochers posés sur les versants ; le relief d'un point coûte environ 4 fois
   plus sur le CPU en montagne qu'avant le bruit d'érosion (collision des tuiles proches).
 - ⬜ 5. Plateaux, terrasses et falaises (mesas, canyons). Une falaise restera une pente raide, pas un mur vertical.
-- ⬜ 6. Vallées et rivières par formule. Crédibles de loin, sans garantir que l'eau descende toujours.
+- ⬜ 6. Vallées et rivières : faites par la carte d'érosion (étape 9), où l'eau descend toujours, plutôt que par formule.
 - 🔧 7. Cratères, pour les lunes et les planètes sans air (composant « Cratères », réglable dans l'inspecteur).
   Limites : sol de la même couleur dedans et autour (ni fond sombre ni traînées claires d'éjectas) ; cratères qui se
   chevauchent additionnés (un récent ne remplace pas l'ancien) ; motif des petits répété tous les 256 mailles.
@@ -322,6 +322,16 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
   la surface liquide (eau, glace ou lave émissive). Les couches nouvelles vont dans `Terrain::GetHeight` et `Height`.
   Textures du sol propres à chaque planète (aujourd'hui, une seule matière « lune » commune à toutes les planètes sans zones, teintée) : un seul tableau
   avec les matières de toutes les planètes, chaque planète lit ses couches (~55 Mo par jeu de 5 en BC7 2048²).
-- ⬜ 9. (À décider par Bruno) Érosion hydraulique précalculée. C'est la plus réaliste, mais elle stocke une carte par
-  planète, ce qui va contre la décision du 2026-10-07.
+- 🔨 9. Érosion hydraulique (choix de Bruno du 2026-11-24, revient sur « rien n'est stocké » du 2026-10-07 pour cette
+  seule couche) : carte par planète (`ErosionMap`), une maille d'environ 1 km sur les 6 faces, calculée au chargement
+  depuis la graine et gardée dans `bin/Cache` ; la formule garde le détail fin par-dessus. Calcul sur le CPU,
+  déterministe (même carte sur le client et le serveur, quel que soit le nombre de fils) : creux remplis depuis la mer
+  (lacs), plus forte pente, débit cumulé, creusement implicite selon la racine du débit (rien sous quelques mailles
+  drainées : crêtes intactes), borné à une part du relief ; versants éboulés jusqu'à une pente donnée, seulement là où
+  le creusement les a raidis (les montagnes gardent leurs pentes). Fait : la carte et ses tests (étape 1). À faire : l'ajouter
+  au relief dans `GetHeight` et `Height` (composant « Érosion »), puis lits des rivières, sol et végétation des berges,
+  puis l'eau des rivières et des lacs. Coût (4 cœurs à 2 GHz) : 0,7 s pour 200 km de rayon, 8 s pour 1 000 km
+  (1 571 mailles par face, les trois quarts pour les hauteurs de départ), environ 0,9 Go le temps du calcul, 130 Mo
+  gardés. Limites : débit sans climat (pluie partout égale) ; l'eau suit une des 8 directions, d'où des bouts de
+  rivière droits ; vallées étroites (une à deux mailles).
 - ⬜ 10. Rochers et cailloux posés sur le sol en instancing, plutôt que des octaves toujours plus fines.
