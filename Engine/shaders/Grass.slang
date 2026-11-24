@@ -18,8 +18,11 @@
 // x 512 (GrassVertexShift), firstInstance = DrawData de la tuile x 4096 (GrassInstanceShift).
 // Réglages (DrawParams) : color = densité (brins par m²), hauteur moyenne (m), portée (m), largeur (m) ; emissive.x =
 // force du vent, emissive.y = part des brins fleuris.
-// Fleurs : une part des brins (GrassFlowers) porte une tête colorée, élargie en losange au bout d'une tige fine, par
-// taches de quelques mètres d'une même couleur (une espèce par tache), plus nombreuses au chaud et sur les plages vertes.
+// Fleurs : une part des brins (GrassFlowers) porte une tête colorée au bout d'une tige fine, par taches de quelques
+// mètres d'une même espèce, plus nombreuses au chaud et sur les plages vertes. De près (mesh shaders, brins de 3
+// segments), la tête est une corolle : 4 à 6 pétales selon l'espèce (GrassCorollas), en coupe ou à plat, un cœur d'une
+// autre couleur ; sa forme vient de la géométrie (pas de test d'alpha, qui ôterait à tout le pré son test de
+// profondeur rapide). Plus loin, et sur le chemin des sommets, la tête reste un losange.
 
 #include "MeshCulling.slang"
 
@@ -54,6 +57,18 @@ static const float3 GrassFlowerPalette[GrassFlowerColors] = {
     float3(0.62, 0.05, 0.04), float3(0.14, 0.26, 0.70), float3(0.80, 0.30, 0.03)};
 static const float GrassFlowerCell = 2.5; // m : taille d'une tache d'une même fleur
 static const float GrassFlowerHead = 0.62; // hauteur relative où commence la tête
+// Corolle de chaque espèce (même ordre que GrassFlowerPalette : marguerite, bouton d'or, mauve, coquelicot, bleuet,
+// souci) : pétales ; rayon de l'encoche entre deux pétales (part du rayon) ; largeur du bout d'un pétale (part de sa
+// part d'angle) ; creux de la coupe. Et la couleur du cœur.
+static const uint GrassMaxPetals = 6;
+static const float4 GrassCorollas[GrassFlowerColors] = {
+    float4(6.0, 0.30, 0.35, 0.05), float4(5.0, 0.55, 0.80, 0.35), float4(5.0, 0.45, 0.10, 0.10),
+    float4(4.0, 0.45, 0.85, 0.55), float4(6.0, 0.50, 0.55, 0.10), float4(6.0, 0.40, 0.60, 0.15)};
+static const float3 GrassFlowerHearts[GrassFlowerColors] = {
+    float3(0.80, 0.55, 0.04), float3(0.55, 0.40, 0.03), float3(0.75, 0.70, 0.60),
+    float3(0.03, 0.02, 0.02), float3(0.10, 0.08, 0.25), float3(0.45, 0.18, 0.02)};
+static const float GrassCorollaRadius = 0.045; // m, rayon moyen d'une corolle (un peu plus que nature : lisible)
+static const float GrassHeartRadius = 0.22;    // part du rayon
 
 // Sommet `index` de la tuile glissé vers sa parente comme le sol le dessine (PlanetVertex) : l'herbe pousse aussi sur
 // les tuiles qui glissent, sans flotter ni s'enfoncer.
@@ -176,7 +191,8 @@ struct GrassBlade
     float3 side;   // demi-largeur au pied, dans le monde
     float3 facing; // normale du ruban, tournée vers la caméra
     float3 tint;   // multiplie la couleur de l'herbe du sol (fragmentGrass)
-    float4 petals; // fleur : couleur de sa tête, 1 en a ; 0 : un brin d'herbe
+    float4 petals; // fleur : couleur de sa tête, 1 + espèce en a ; 0 : un brin d'herbe
+    float corolla; // fleur : rayon de sa corolle (m)
     uint planet;
     float3 rim;    // contour d'une planète sans air (PlanetRim), comme le sol
 };
@@ -193,6 +209,7 @@ GrassBlade NoGrassBlade()
     blade.facing = float3(0.0, 1.0, 0.0);
     blade.tint = float3(0.0);
     blade.petals = float4(0.0);
+    blade.corolla = 0.0;
     blade.planet = 0;
     blade.rim = float3(0.0);
     return blade;
@@ -328,7 +345,8 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
     if (flower) {
         const uint kind = min(uint(flowerPatch.y * float(GrassFlowerColors)), GrassFlowerColors - 1);
         // Un peu de variété d'une fleur à l'autre de la même tache.
-        blade.petals = float4(GrassFlowerPalette[kind] * lerp(0.8, 1.1, r3.x), 1.0);
+        blade.petals = float4(GrassFlowerPalette[kind] * lerp(0.8, 1.1, r3.x), 1.0 + float(kind));
+        blade.corolla = GrassCorollaRadius * lerp(0.8, 1.2, r2.x) * sqrt(grow);
     }
     facing = dot(facing, -blade.root) < 0.0 ? -facing : facing;
     // Normale penchée vers le ciel : les brins s'éclairent presque comme le sol sous eux. Sans cela, debout face à un
@@ -395,6 +413,79 @@ uint3 GrassTriangle(uint j, uint segments)
     return (j & 1u) == 0 ? uint3(a, a + 1, a + 3) : uint3(a, a + 3, a + 2);
 }
 
+// Corolle d'une fleur (meshGrass, de près) : la tige, un triangle du pied (gauche, droite) au cœur ; puis le cœur et 3
+// sommets par pétale (encoche, bout gauche, bout droit) en éventail autour de lui, relevés en coupe selon l'espèce.
+// tintHeight.a : 4 + 2 x espèce + rayon relatif (0 au cœur, 1 au bout des pétales) ; la tige suit le codage des fleurs
+// en losange.
+uint GrassFlowerKind(GrassBlade blade)
+{
+    return min(uint(blade.petals.a) - 1u, GrassFlowerColors - 1u);
+}
+
+uint GrassCorollaPetals(GrassBlade blade)
+{
+    return uint(GrassCorollas[GrassFlowerKind(blade)].x);
+}
+
+uint GrassCorollaVertices(uint petals)
+{
+    return 4 + 3 * petals;
+}
+
+uint GrassCorollaTriangles(uint petals)
+{
+    return 1 + 3 * petals;
+}
+
+GrassVertexOutput GrassCorollaVertex(GrassBlade blade, uint k)
+{
+    const uint kind = GrassFlowerKind(blade);
+    const float4 shape = GrassCorollas[kind];
+    const uint petals = uint(shape.x);
+    // Repère de la corolle : tournée vers où pointe la tige, son bord pris sur la largeur du brin (au hasard).
+    const float3 up = normalize(blade.tip - blade.bend);
+    const float3 across = normalize(blade.side - up * dot(blade.side, up));
+    const float3 other = cross(up, across);
+    GrassVertexOutput output;
+    float3 position;
+    if (k < 3) {
+        position = k == 2 ? blade.tip : blade.root + blade.side * (k == 0 ? -0.35 : 0.35);
+        output.normal = blade.facing;
+        // Sous GrassFlowerHead : couleur de tige dans fragmentGrass.
+        output.tintHeight = float4(blade.petals.rgb, 2.0 + (k == 2 ? 0.9 * GrassFlowerHead : 0.0));
+    } else {
+        float radius = 0.0;
+        float angle = 0.0;
+        if (k > 3) {
+            const uint corner = (k - 4) % 3;
+            const float share = 3.14159265 / float(petals); // demi-part d'angle d'un pétale
+            const float offset = corner == 0 ? -share : corner == 1 ? -share * shape.z : share * shape.z;
+            angle = 2.0 * share * float((k - 4) / 3) + offset;
+            radius = corner == 0 ? shape.y : 1.0;
+        }
+        const float3 radial = across * cos(angle) + other * sin(angle);
+        position = blade.tip + (radial * radius + up * (shape.w * radius * radius * 0.6)) * blade.corolla;
+        // Normale penchée vers le cœur dans une coupe : la facette s'éclaire comme une surface arrondie.
+        output.normal = normalize(up - radial * (shape.w * radius * 1.2));
+        output.tintHeight = float4(blade.petals.rgb, 4.0 + 2.0 * float(kind) + radius);
+    }
+    output.position = Transform(frame[0].viewProjection, position);
+    output.worldPosition = position;
+    output.rim = blade.rim;
+    output.planet = blade.planet;
+    return output;
+}
+
+// Triangle j de la corolle (indices de ses sommets, comme GrassCorollaVertex).
+uint3 GrassCorollaTriangle(uint j, uint petals)
+{
+    if (j == 0) {
+        return uint3(0, 1, 2);
+    }
+    const uint rim = 3 * petals;
+    return uint3(3, 4 + (j - 1), 4 + j % rim);
+}
+
 // Chemin des sommets : instance = un groupe de GrassClusterBlades brins d'une tuile. Les brins écartés (au loin, sans
 // herbe) donnent des triangles vides.
 [shader("vertex")]
@@ -447,6 +538,17 @@ GBufferOutput fragmentGrass(GrassVertexOutput input)
     // Pied sombre (les voisins lui cachent ciel et soleil), pointe claire et un peu sèche : en moyenne
     // GrassMeadowShade, la couleur que le sol prend sous l'herbe (PlanetGBuffer).
     // Ciel compté moins fort que sur le sol (occlusion 0,85 en haut) : sinon, à l'ombre, les brins bleuissent.
+    // Corolle : pétales plus soutenus vers le cœur, plus clairs au bout ; le cœur d'une autre couleur. Au-dessus des
+    // brins voisins (presque pas d'ombre d'eux).
+    if (input.tintHeight.a >= 4.0) {
+        const float code = input.tintHeight.a - 4.0;
+        const uint kind = min(uint(code * 0.5), GrassFlowerColors - 1u);
+        const float radius = code - 2.0 * float(kind);
+        const float3 petal = input.tintHeight.rgb * lerp(0.75, 1.1, smoothstep(0.2, 1.0, radius));
+        const float3 color = lerp(GrassFlowerHearts[kind], petal,
+                                  smoothstep(GrassHeartRadius - 0.03, GrassHeartRadius + 0.03, radius));
+        return GBufferResult(input.rim, float2(0.0), color, GBufferGrass, normal, normal, float4(0.4, 0.6, 0.95, 0.35));
+    }
     const bool flower = input.tintHeight.a >= 2.0;
     const float height = flower ? input.tintHeight.a - 2.0 : input.tintHeight.a;
     const float occlusion = lerp(0.15, 0.85, height);

@@ -13,8 +13,11 @@
 
 static const uint GrassGroupBlades = 32;
 static const uint GrassMaxSegments = 3;
-static const uint GrassMaxVertices = GrassGroupBlades * (2 * GrassMaxSegments + 1);
-static const uint GrassMaxTriangles = GrassGroupBlades * (2 * GrassMaxSegments - 1);
+// Sorties d'un groupe : ses brins, plus la place des corolles de près (GrassCorollaVertex) au-delà des brins qu'elles
+// remplacent ; 256 au plus (limite garantie des mesh shaders, et taille préférée des GPU AMD). Une fleur qui ne tient plus
+// (taches très fleuries) garde sa tête en losange.
+static const uint GrassMaxVertices = 256;
+static const uint GrassMaxTriangles = 256;
 static const uint GrassPatchQuads = 4;
 static const uint GrassPatchSide = GrassTileQuads / GrassPatchQuads;
 static const uint GrassPatchCount = GrassPatchSide * GrassPatchSide; // un thread de la tâche par carré
@@ -132,6 +135,9 @@ void taskGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
 }
 
 groupshared uint aliveBlades;
+groupshared uint corollaCount;
+groupshared uint corollaNeeds[GrassGroupBlades]; // sommets en plus de chaque fleur candidate, dans l'ordre d'arrivée
+groupshared uint plainBlades;
 
 [shader("mesh")]
 [outputtopology("triangle")]
@@ -162,25 +168,68 @@ void meshGrass(uint thread : SV_GroupIndex, uint3 group : SV_GroupID, in payload
         blade = MakeGrassBlade(tile.draw, tile.firstVertex, seed, index, origin, float(GrassPatchQuads),
                                asfloat(patch.w), tile.climates[entry]);
     }
-    // Les brins vivants à la suite, sans trou.
-    if (thread == 0) {
-        aliveBlades = 0;
-    }
-    GroupMemoryBarrierWithGroupSync();
-    uint slot = 0;
-    if (blade.alive) {
-        InterlockedAdd(aliveBlades, 1, slot);
-    }
-    GroupMemoryBarrierWithGroupSync();
+    // Les brins vivants à la suite, sans trou ; les fleurs de près candidates à une corolle comptées à part.
     const uint vertexCount = 2 * segments + 1;
     const uint triangleCount = 2 * segments - 1;
-    SetMeshOutputCounts(aliveBlades * vertexCount, aliveBlades * triangleCount);
+    const bool candidate = blade.alive && blade.petals.a > 0.0 && segments == GrassMaxSegments;
+    const uint petals = candidate ? GrassCorollaPetals(blade) : 0u;
+    if (thread == 0) {
+        aliveBlades = 0;
+        corollaCount = 0;
+        plainBlades = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    uint order = 0;
     if (blade.alive) {
+        InterlockedAdd(aliveBlades, 1);
+    }
+    if (candidate) {
+        InterlockedAdd(corollaCount, 1, order);
+        // Sommets en plus du brin qu'elle remplace (3 par pétale, moins 3) ; un triangle de moins que de sommets.
+        corollaNeeds[order] = GrassCorollaVertices(petals) - vertexCount;
+    }
+    GroupMemoryBarrierWithGroupSync();
+    // Place restante une fois tous les brins comptés : les candidates la prennent dans leur ordre d'arrivée tant
+    // qu'elle suffit. rank : retenues avant celle-ci ; extra : leur supplément de sommets (de triangles : extra - rank).
+    const uint spare = min(GrassMaxVertices - aliveBlades * vertexCount, GrassMaxTriangles - aliveBlades * triangleCount);
+    bool corolla = false;
+    uint rank = 0;
+    uint extra = 0;
+    uint accepted = 0;
+    for (uint c = 0; c < corollaCount; ++c) {
+        const bool fits = accepted + corollaNeeds[c] <= spare;
+        if (candidate && c == order) {
+            corolla = fits;
+            extra = accepted;
+        }
+        if (fits) {
+            accepted += corollaNeeds[c];
+            rank += candidate && c < order ? 1u : 0u;
+        }
+    }
+    // Brins simples d'abord, à la suite ; les corolles après eux, dans leur ordre.
+    uint plainSlot = 0;
+    if (blade.alive && !corolla) {
+        InterlockedAdd(plainBlades, 1, plainSlot);
+    }
+    GroupMemoryBarrierWithGroupSync();
+    const uint acceptedCount = aliveBlades - plainBlades;
+    SetMeshOutputCounts(aliveBlades * vertexCount + accepted, aliveBlades * triangleCount + accepted - acceptedCount);
+    if (corolla) {
+        const uint firstVertex = (plainBlades + rank) * vertexCount + extra;
+        const uint firstTriangle = (plainBlades + rank) * triangleCount + extra - rank;
+        for (uint k = 0; k < GrassCorollaVertices(petals); ++k) {
+            vertices[firstVertex + k] = GrassCorollaVertex(blade, k);
+        }
+        for (uint j = 0; j < GrassCorollaTriangles(petals); ++j) {
+            triangles[firstTriangle + j] = GrassCorollaTriangle(j, petals) + firstVertex;
+        }
+    } else if (blade.alive) {
         for (uint k = 0; k < vertexCount; ++k) {
-            vertices[slot * vertexCount + k] = GrassVertex(blade, k, segments);
+            vertices[plainSlot * vertexCount + k] = GrassVertex(blade, k, segments);
         }
         for (uint j = 0; j < triangleCount; ++j) {
-            triangles[slot * triangleCount + j] = GrassTriangle(j, segments) + slot * vertexCount;
+            triangles[plainSlot * triangleCount + j] = GrassTriangle(j, segments) + plainSlot * vertexCount;
         }
     }
 }

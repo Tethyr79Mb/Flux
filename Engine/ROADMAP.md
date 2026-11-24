@@ -348,6 +348,11 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - 🔧 Fleurs dans l'herbe (choix de Bruno du 2026-11-22) : une part des brins (« Herbe : fleurs », 4 %) porte une tête
   colorée (blanc, jaune, mauve, rouge, bleu, orange), par taches de 2,5 m d'une même couleur, un tiers sans fleurs,
   plus au chaud (rien sous 2 °C) et sur les plages vertes ; aucun coût de mémoire, une sortie de sommet inchangée.
+  Corolles de près (Bruno, 2026-11-24) : sous 8 m, en mesh shaders, la tête est une corolle de 4 à 6 pétales selon
+  l'espèce (marguerite, bouton d'or, mauve, coquelicot, bleuet, souci), en coupe ou à plat, au cœur d'une autre couleur,
+  sans test d'alpha. Limites : place d'un groupe de 32 brins bornée (256 sommets), 2 à 3 corolles par groupe, les
+  autres fleurs gardent le losange ; la tête passe du losange à la corolle d'un coup à 8 m ; repli sans mesh shaders en
+  losange. À faire : touffes de fleurs modélisées.
 - 🔧 Herbe (`shaders/Grass.slang`, réglages dans `VegetationComponent`) : brins en courbe de Bézier générés par le GPU
   à chaque image sur les tuiles proches, là où le sol montre de l'herbe (`GetGroundCover`, partagé avec le sol), rien
   en mémoire. Mesh shaders : une tâche par tuile écarte ses 64 carrés de 4 x 4 mailles hors champ, cachés ou sans
@@ -359,8 +364,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   du soleil simple sur les brins (sans recherche d'obstacles, 4 lectures), 3 segments sous 8 m. Coût : 1,90 → 0,99 ms
   (RX 7700 XT, vue de l'éditeur 1070×636), puis 1,30 → 1,03 ms au pré par les carrés (vue 1159×649), dont 0,82 ms de brins (« Sol et herbe sans pixels »). Piste suivante si
   besoin : brins fabriqués une fois par tuile en compute et gardés en mémoire (seul le vent change). À améliorer :
-  couverture du sol calculée par brin (à faire par paquet) ; fleurs simples (losange coloré au bout d'une tige, pas
-  de pétales en volume) ; un peu bleue à l'ombre ;
+  couverture du sol calculée par brin (à faire par paquet) ; un peu bleue à l'ombre ;
   pas d'ombre portée par l'herbe ; ne se couche pas sous les pas
   ni le souffle des réacteurs (étape 3) ; pas de réglage du joueur (étape 2) ; la couleur des brins est la moyenne de
   l'image d'herbe du sol (pas sa teinte locale) ; le mouvement du vent n'entre pas dans les vecteurs de mouvement (TAA).
