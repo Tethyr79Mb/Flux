@@ -225,7 +225,7 @@ namespace Flux {
             return {static_cast<std::uint32_t>(size.x), static_cast<std::uint32_t>(size.y)};
         }
 
-        // Textures de la vue 3D, de rendu et de sa moitié (nuages) à leur taille ; recréées, PostRenderer et
+        // Textures de la vue 3D et de rendu à leur taille ; recréées, PostRenderer et
         // CloudRenderer refont leurs groupes.
         std::expected<void, std::string> ResizeViewTargets(RHI::Extent view, RHI::Extent render) {
             auto viewResized = graph.ResizeTextures(*device, RenderGraph::TextureSize::View, view);
@@ -236,12 +236,7 @@ namespace Flux {
             if (!renderResized) {
                 return std::unexpected(renderResized.error());
             }
-            auto halfResized = graph.ResizeTextures(*device, RenderGraph::TextureSize::HalfView,
-                                                    {(render.width + 1) / 2, (render.height + 1) / 2});
-            if (!halfResized) {
-                return std::unexpected(halfResized.error());
-            }
-            if (!*viewResized && !*renderResized && !*halfResized) {
+            if (!*viewResized && !*renderResized) {
                 return {};
             }
             exposure->Bind(*graph.GetTexture(targets.sceneColor), graph.GetTexture(targets.sceneDepth));
@@ -501,6 +496,7 @@ namespace Flux {
             if (!meshes->HasClouds() || !temporal.continuous) {
                 clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
             }
+            clouds->SetCameraHeight(meshes->GetCloudHeight());
             thrusters->Prepare(meshes->GetThrusters(), camera, aspect, temporal.jitter, frame.preExposure);
             if (workers) {
                 workers->Wait(tracersDone);
@@ -642,13 +638,14 @@ namespace Flux {
                                                   {PostRenderer::SceneFormat, TextureSize::View, true, true});
             targets.windowDepth = graph.CreateTexture("profondeur de la fenêtre", Lifetime::Frame,
                                                       {DepthFormat, TextureSize::Window, false});
-            // Nuages, à la moitié de la vue : ce qu'en voit cette image, puis mêlé à l'historique.
+            // Nuages : ce qu'en voit cette image, puis mêlé à l'historique. À la taille de rendu, la marche n'en remplissant
+            // que la moitié sous les nuages (CloudRenderer::GetMarchExtent).
             targets.cloudLight = graph.CreateTexture("nuages", Lifetime::Frame,
-                                                     {Planetology::CloudRenderer::LightFormat, TextureSize::HalfView});
+                                                     {Planetology::CloudRenderer::LightFormat, TextureSize::Render});
             targets.cloudDistances = graph.CreateTexture("distances des nuages", Lifetime::Frame,
-                                                         {Planetology::CloudRenderer::DistanceFormat, TextureSize::HalfView});
+                                                         {Planetology::CloudRenderer::DistanceFormat, TextureSize::Render});
             targets.cloudHistory = graph.CreateTexture("historique des nuages", Lifetime::Previous,
-                                                       {Planetology::CloudRenderer::LightFormat, TextureSize::HalfView});
+                                                       {Planetology::CloudRenderer::LightFormat, TextureSize::Render});
             // G-buffer des modèles opaques, lu par la passe « éclairage ».
             targets.gbufferBase = graph.CreateTexture("G-buffer : couleur", Lifetime::Frame,
                                                       {LightingRenderer::BaseFormat, TextureSize::Render});
@@ -949,10 +946,10 @@ namespace Flux {
             const auto cloudLight = targets.cloudLight;
             const auto cloudDistances = targets.cloudDistances;
             const auto cloudHistory = targets.cloudHistory;
-            const auto halfViewport = [this](RHI::CommandList& commands) {
-                const RHI::Extent half = graph.GetTexture(targets.cloudLight)->GetExtent();
-                commands.SetViewport({0.0f, 0.0f, static_cast<float>(half.width), static_cast<float>(half.height)});
-                commands.SetScissor({0, 0, half.width, half.height});
+            const auto marchViewport = [this](RHI::CommandList& commands) {
+                const RHI::Extent march = clouds->GetMarchExtent();
+                commands.SetViewport({0.0f, 0.0f, static_cast<float>(march.width), static_cast<float>(march.height)});
+                commands.SetScissor({0, 0, march.width, march.height});
             };
             graph.AddPass("nuages")
                 .When(hasClouds)
@@ -961,10 +958,10 @@ namespace Flux {
                 .Reads(irradiance)
                 .Writes(cloudLight)
                 .Writes(cloudDistances)
-                .Begin([this, halfViewport](RHI::CommandList& commands) {
+                .Begin([this, marchViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.colorTarget = graph.GetTexture(targets.cloudLight),
                                               .extraColorTargets = {graph.GetTexture(targets.cloudDistances)}});
-                    halfViewport(commands);
+                    marchViewport(commands);
                 })
                 .Step("nuages", [this](RHI::CommandList& commands) { clouds->DrawMarch(commands, frame.index); });
             graph.AddPass("historique des nuages")
@@ -975,9 +972,9 @@ namespace Flux {
                 .Reads(cloudHistory)
                 .Writes(cloudHistory)
                 .Prepare([this] { frame.cloudCopy = graph.GetWriteCopy(targets.cloudHistory); })
-                .Begin([this, halfViewport](RHI::CommandList& commands) {
+                .Begin([this, marchViewport](RHI::CommandList& commands) {
                     commands.BeginRenderPass({.colorTarget = graph.GetCopy(targets.cloudHistory, frame.cloudCopy)});
-                    halfViewport(commands);
+                    marchViewport(commands);
                 })
                 .Step("historique des nuages", [this](RHI::CommandList& commands) {
                     clouds->DrawResolve(commands, frame.index, frame.cloudCopy);

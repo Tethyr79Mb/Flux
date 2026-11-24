@@ -16,16 +16,18 @@ namespace Flux {
 
 namespace Flux::Planetology {
     // Nuages volumétriques des planètes (CloudsComponent), en trois passes après la scène opaque (shaders/Clouds.slang) :
-    // la marche dans la couche à la moitié de la résolution (DrawMarch), le mélange à l'historique (DrawResolve), puis
-    // la composition dans l'image de la scène à pleine résolution (DrawComposite), avant les transparents. Les
-    // textures de travail sont au graphe de rendu (Targets) ; ici, le bruit 3D (CloudNoise), les pipelines et les
-    // groupes qui les désignent. Les données de l'image (planètes, soleil, air) sont celles de MeshRenderer.
+    // la marche dans la couche à la moitié de la résolution de rendu, à la pleine au-dessus des nuages (DrawMarch), le
+    // mélange à l'historique (DrawResolve), puis la composition dans l'image de la scène à pleine résolution
+    // (DrawComposite), avant les transparents. Les textures de travail sont au graphe de rendu (Targets) ; ici, le bruit
+    // 3D (CloudNoise), les pipelines et les groupes qui les désignent. Les données de l'image (planètes, soleil, air) sont celles de MeshRenderer.
     // Coût : la marche, jusqu'à 64 pas par pixel (6 de plus vers le soleil là où il y a du nuage) en qualité Élevée,
-    // moins dans le vide entre deux nuages (pas allongés), au quart du nombre de pixels de la vue ; puis deux passes plein écran légères. Mémoire vidéo : 9,7 Mo de bruit, et 18 Mo de
-    // textures de travail en 1440p.
+    // moins dans le vide entre deux nuages (pas allongés), au quart du nombre de pixels de rendu (à tous au-dessus des
+    // nuages, où les rayons ne traversent que la couche) ; puis deux passes plein écran légères. Mémoire vidéo : 9,7 Mo
+    // de bruit, et 40 octets par pixel de rendu de textures de travail (65 Mo en 1440p FSR Qualité) : à la taille de
+    // rendu pour passer de la demi à la pleine résolution sans les recréer.
     class CloudRenderer {
         public:
-        // Formats des textures de travail (demi-résolution) : la lumière des nuages (prémultipliée) et leur opacité ;
+        // Formats des textures de travail : la lumière des nuages (prémultipliée) et leur opacité ;
         // les distances (premier nuage, nuage moyen, fin du rayon), en float 32 bits pour les centaines de km.
         static constexpr RHI::Format LightFormat = RHI::Format::RGBA16Float;
         static constexpr RHI::Format DistanceFormat = RHI::Format::RGBA32Float;
@@ -36,7 +38,7 @@ namespace Flux::Planetology {
                                                                                  RHI::Format sceneFormat,
                                                                                  RHI::Format reactiveFormat);
 
-        // Textures du graphe de rendu : la profondeur de la scène (pleine résolution), les autres en demi-résolution.
+        // Textures du graphe de rendu, toutes à la taille de rendu : la marche n'en remplit qu'une partie (GetMarchExtent).
         struct Targets
         {
             const RHI::Texture* sceneDepth = nullptr;
@@ -49,6 +51,13 @@ namespace Flux::Planetology {
         // L'historique ne vaut plus rien (image sans nuages, saut de la caméra) : la prochaine image repart de zéro.
         void ResetHistory() { m_historyValid = false; }
         void SetQuality(CloudQuality quality) { m_quality = quality; }
+        // Hauteur de la caméra au-dessus du haut de la couche de nuages la plus proche (MeshRenderer::GetCloudHeight),
+        // une fois par image avant les passes : choisit la résolution de la marche. Au-dessus des nuages (et en
+        // qualité Moyenne ou Élevée), la pleine ; dessous ou dedans, où les rayons sont longs, la moitié. Un écart
+        // entre les deux seuils évite de basculer à chaque image ; l'historique repart à zéro au changement.
+        void SetCameraHeight(float height);
+        // Taille de la marche et de l'historique dans les textures de travail (le viewport de leurs passes).
+        RHI::Extent GetMarchExtent() const;
         CloudQuality GetQuality() const { return m_quality; }
 
         // Chacune dans une passe de dessin déjà commencée, viewport compris : DrawMarch vers `light` et `distances`,
@@ -82,6 +91,7 @@ namespace Flux::Planetology {
         std::array<std::unique_ptr<RHI::BindGroup>, 2> m_resolveGroups;   // [i] : écrit history[i], lit l'autre
         std::array<std::unique_ptr<RHI::BindGroup>, 2> m_compositeGroups; // [i] : lit history[i]
         bool m_historyValid = false;
+        std::uint32_t m_scale = 2; // pixels de rendu par pixel de la marche, sur chaque axe
         CloudQuality m_quality = DefaultCloudQuality;
     };
 }

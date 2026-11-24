@@ -23,6 +23,7 @@
 #include <chrono>
 #include <expected>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -204,6 +205,9 @@ namespace Flux {
         void DrawOcean(RHI::CommandList& commands, std::uint32_t frameIndex) const;
         // Une planète de l'image a des nuages (dessinés par Planetology::CloudRenderer).
         bool HasClouds() const { return m_hasClouds; }
+        // Hauteur de la caméra au-dessus du haut de la couche de nuages la plus proche (m), négative dedans ou dessous ;
+        // très grande sans nuages (Planetology::CloudRenderer::SetCameraHeight).
+        float GetCloudHeight() const { return m_cloudHeight; }
         // Groupes 0 à 2 des shaders de Mesh.slang (sol neutre, image, tables des modèles), pour les passes d'ailleurs
         // qui en incluent les données (nuages : shaders/Clouds.slang ; éclairage : Lighting.slang). BindScene les lie, après le pipeline.
         std::array<const RHI::BindGroupLayout*, 3> GetSceneLayouts() const;
@@ -653,6 +657,7 @@ namespace Flux {
         double m_waveTime = -1.0;                 // s, à la dernière simulation
         std::array<std::array<float, 4>, 5> m_waveFrame{}; // FrameData::waveOrigin à waveOffsets
         bool m_hasClouds = false; // une planète de l'image a des nuages
+        float m_cloudHeight = std::numeric_limits<float>::max();
         std::chrono::steady_clock::time_point m_start = std::chrono::steady_clock::now(); // vagues
         // Groupe 1, un par image en vol : os, entités, données de l'image, carte d'ombres.
         std::unique_ptr<RHI::BindGroupLayout> m_frameLayout;

@@ -369,7 +369,7 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ⬜ Texture virtuelle du sol (Proland, Far Cry) : le sol proche peint une fois dans un cache du GPU au lieu d'être
   recalculé à chaque pixel (le sol coûte surtout en calculs par pixel).
 - ⬜ Vent des arbres hiérarchique (SpeedTree, Crysis) : tronc, branches et feuilles à leurs propres fréquences.
-- 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume (64 pas en demi-résolution au plus, allongés entre les nuages, reprojetés d'une image à l'autre), cumulus et stratus, avec leur ombre au sol. Coût mesuré chez Bruno (RX 7700 XT, 1080p, ciel plein écran) : 2,1 ms avant les pas allongés. Limites : pas de masque réactif pour FSR, qualité choisie à la main.
+- 🔧 Nuages : une couche épaisse par planète (`CloudsComponent`), en volume (64 pas en demi-résolution au plus, en pleine résolution vus d'orbite, allongés entre les nuages, reprojetés d'une image à l'autre avec un point du pixel différent à chaque image), cumulus et stratus, avec leur ombre au sol, éteints côté nuit. Coût mesuré chez Bruno (RX 7700 XT, 1080p, ciel plein écran) : 2,1 ms avant les pas allongés. Limites : qualité choisie à la main ; vus d'orbite, taches plates de même taille sans structure à grande échelle (à venir : volume de loin, puis carte météo planétaire).
 - 🔨 Nuages volumétriques (3 étapes) : 1) ✅ bruit 3D (forme Perlin-Worley 128³, détail Worley 32³) calculé une fois
   par le GPU, avec ses mips ; 2) ✅ rendu en demi-résolution avec reprojection, 64 pas, ombre interne
   vers le soleil, diffusion multiple, cumulus et stratus ; 3) ✅ pas allongés dans le vide (environ 45 % de

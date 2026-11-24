@@ -202,7 +202,7 @@ parallèles, prises sous verrou), `VulkanTimestamps` (heures du GPU),
 entre types du RHI et de Vulkan sont toutes dans `VulkanTypes`.
 
 Le graphe de rendu (`Renderer/RenderGraph`) est décrit une fois dans `Renderer::Impl::BuildGraph` : calculs du GPU
-(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, G-buffer (modèles opaques, arbres, herbe, sol), occlusion ambiante GTAO, puis leur éclairage en compute, scène HDR (fond du ciel, océan), nuages en demi-résolution
+(tuiles, arbres, objets cachés), tables de l'air, nébuleuse du ciel, ombres, G-buffer (modèles opaques, arbres, herbe, sol), occlusion ambiante GTAO, puis leur éclairage en compute, scène HDR (fond du ciel, océan), nuages en demi-résolution (pleine vus d'orbite)
 (marche, historique, composition), transparents, masque réactif (en FSR), pyramide de profondeur, anticrénelage ou FSR
 (mouvement complet puis agrandissement), bloom, image finale (scène, grille, interface). Chaque passe
 déclare ce qu'elle lit et écrit : `Compile` refuse une lecture qui précède toute écriture de l'image (sauf ce qui est
@@ -590,7 +590,10 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
   sphères (base et sommet), sans maillage, marchée par le GPU dans trois passes du graphe placées après la scène
   opaque, qui coupent la passe « scène » en deux (le graphe garde ce qu'elle a écrit : `Pass::continued`, et
   `RenderPassDesc::loadColor` pour la reprendre) :
-  1. « nuages », en demi-résolution (`TextureSize::HalfView`) : 32 à 64 pas au plus le long du rayon dans la
+  1. « nuages », en demi-résolution, en pleine à plus de 30 km au-dessus des nuages (retour sous 20 km ; pas en
+     qualité Basse) : vue d'orbite, la moitié les dessinait en escalier. Textures à la taille de rendu, la marche en
+     remplit le coin utile (`CloudRenderer::GetMarchExtent`). Rayon à un autre point du pixel à chaque image (8 points
+     de Halton) : l'historique en lisse les bords. 32 à 64 pas au plus le long du rayon dans la
      couche selon `CloudQuality` (réglage « Qualité des nuages », qui fixe aussi les 4 à 6 pas vers le soleil),
      resserrés près de l'entrée quand la caméra y est, allongés (x2 puis x3) après deux pas vides, départ décalé
      au hasard à chaque image. Densité : carte
@@ -603,7 +606,7 @@ du sol, de l'océan, des nuages et des arbres (`MeshRenderer` et `shaders/Mesh.s
      Sorties : lumière prémultipliée + opacité, et les distances (premier nuage, nuage moyen, fin du rayon).
   2. « historique des nuages » : l'image d'avant reprojetée à la distance du nuage moyen, ramenée dans la boîte
      3 x 3 des valeurs actuelles, mêlée à l'image actuelle : le grain des pas s'efface.
-  3. « composition des nuages », en pleine résolution : les 4 pixels de demi-résolution voisins, pondérés en
+  3. « composition des nuages », en pleine résolution : les 4 pixels de la marche voisins, pondérés en
      bilinéaire et par la ressemblance de profondeur (bord d'une montagne), mélangés sur la scène ; un pixel plus
      proche que le premier nuage (moyenne des seuls voisins qui en voient un) n'en reçoit pas.
   Leur ombre (`CloudShadow`, Mesh.slang) lit la même carte météo et multiplie le soleil de tout ce qui est éclairé
