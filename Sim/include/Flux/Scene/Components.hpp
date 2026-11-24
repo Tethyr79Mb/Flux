@@ -316,6 +316,15 @@ namespace Flux {
         bool ocean = true;
         float seaLevel = 0.0f;
         Math::LinearColor waterColor{0.01f, 0.045f, 0.07f};
+        // Vagues (Flux/Planetology/OceanWaves.hpp) : une mer levée par un vent de waveWind (m/s) soufflant vers
+        // waveDirection (degrés depuis l'est, vers le nord) sur waveFetch (km, la distance sur laquelle il souffle :
+        // plus elle est longue, plus la houle est haute et longue). waveChoppiness : crêtes pointues (0 : vagues rondes) ;
+        // waveSpread : 0,5 houle rangée dans le vent, 2 mer croisée. Le hasard vient de la graine de la planète.
+        float waveWind = 8.0f;
+        float waveDirection = 0.0f;
+        float waveFetch = 100.0f;
+        float waveChoppiness = 0.9f;
+        float waveSpread = 1.0f;
         float gravity = 9.81f; // m/s², au niveau du sol ; décroît comme 1 / distance² au-dessus
         // Atmosphère (Flux/Planetology/Atmosphere.hpp) : ciel coloré vu du sol, brume au loin, halo vu de l'espace.
         float atmosphere = 1.0f;          // densité : 0 aucune, 1 comme sur Terre

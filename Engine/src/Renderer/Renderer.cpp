@@ -691,7 +691,9 @@ namespace Flux {
                 .Step("tuiles de planète", [this](RHI::CommandList& commands) { meshes->ComputeTiles(commands, frame.index); })
                 .Step("semis des arbres", [this](RHI::CommandList& commands) { meshes->SowTrees(commands, frame.index); })
                 .Step("tri des arbres", [this](RHI::CommandList& commands) { meshes->CullTrees(commands, frame.index); })
-                .Step("objets cachés", [this](RHI::CommandList& commands) { meshes->CullHidden(commands, frame.index); });
+                .Step("objets cachés", [this](RHI::CommandList& commands) { meshes->CullHidden(commands, frame.index); })
+                .Step("vagues de l'océan", [this](RHI::CommandList& commands) { meshes->SimulateOcean(commands); },
+                      [this] { return meshes->HasOceanWaves(); });
             // Structures du ray tracing : celles des modèles qui viennent d'apparaître, puis celle de la scène, refaite à
             // chaque image. Avant les passes qui y lanceront des rayons.
             const auto rayScene = graph.AddResource("scène du ray tracing");

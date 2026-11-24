@@ -118,10 +118,12 @@ namespace Flux {
             std::array<Math::Matrix4f, 6> probeFaces; // capture d'une sonde : relatif caméra -> clip de chaque face
             std::array<float, 4> probeEye;            // point de la capture
             std::array<std::uint32_t, 4> probeOptions; // x : sondes dans probes
+            // Vagues (MeshRenderer::m_waveFrame) : waveOrigin, waveEast, waveNorth, waveOffsets[2].
+            std::array<std::array<float, 4>, 5> waves;
         };
         static_assert(sizeof(FrameData) == 576 + 4 * 64 + 3 * 16 + MaxInteriors * sizeof(InteriorData) + MaxPlanets * sizeof(Planetology::PlanetGpu)
                                                + sizeof(Planetology::AtmosphereGpu) + 128
-                                               + ReflectionProbes::MaxProbes * sizeof(ProbeData) + 6 * 64 + 32
+                                               + ReflectionProbes::MaxProbes * sizeof(ProbeData) + 6 * 64 + 32 + 5 * 16
                       && ShadowCascadeCount == 4 && TerrainShadowCascadeCount == 2);
 
 
@@ -170,6 +172,14 @@ namespace Flux {
         constexpr std::uint32_t SceneStructureSlot = 19; // ray tracing seulement (shaders/MeshRays.slang)
         constexpr std::uint32_t AtmosphereMultipleSlot = 20; // diffusion multiple de l'air (SkyLighting::atmosphereMultiple)
         constexpr std::uint32_t FirstProbeSlot = 21; // reflets des sondes, un emplacement chacune (ReflectionProbes::MaxProbes)
+        // Vagues de l'océan (OceanWavesGpu), un emplacement par cascade : déplacement, puis pentes.
+        constexpr std::uint32_t FirstWaveDisplacementSlot = 25;
+        constexpr std::uint32_t FirstWaveSlopesSlot = 28;
+        // Les vagues soulèvent les sommets de l'eau jusqu'à cette distance de la caméra (m), puis s'effacent au pixel
+        // (normales, écume) jusqu'à la seconde : au-delà, plus fines qu'un pixel, elles ne font que rendre le reflet du
+        // soleil plus large (rugosité).
+        constexpr float WaveDisplacementRange = 4000.0f;
+        constexpr float WaveNormalRange = 20000.0f;
         // Près de la capture d'une sonde, les faces du cube commencent à ce point (m) : plus près, un objet est coupé.
         constexpr float ProbeNearPlane = 0.05f;
         // Groupes de la page de modèles lue par les mesh shaders, un par page : bien au-delà de ce qu'une scène charge
@@ -365,6 +375,13 @@ namespace Flux {
             RHI::Binding{FirstProbeSlot + 1, RHI::BindingType::Texture, pixels},
             RHI::Binding{FirstProbeSlot + 2, RHI::BindingType::Texture, pixels},
             RHI::Binding{FirstProbeSlot + 3, RHI::BindingType::Texture, pixels},
+            RHI::Binding{FirstWaveDisplacementSlot + 0, RHI::BindingType::Texture, both},
+            RHI::Binding{FirstWaveDisplacementSlot + 1, RHI::BindingType::Texture, both},
+            RHI::Binding{FirstWaveDisplacementSlot + 2, RHI::BindingType::Texture, both},
+            RHI::Binding{FirstWaveSlopesSlot + 0, RHI::BindingType::Texture, pixels},
+            RHI::Binding{FirstWaveSlopesSlot + 1, RHI::BindingType::Texture, pixels},
+            RHI::Binding{FirstWaveSlopesSlot + 2, RHI::BindingType::Texture, pixels},
+            // En dernier : absente sans ray tracing.
             RHI::Binding{SceneStructureSlot, RHI::BindingType::AccelerationStructure, pixels},
         };
         // La structure de la scène n'existe qu'avec le ray tracing (sinon, type de liaison inconnu du pilote).
@@ -375,6 +392,18 @@ namespace Flux {
             return std::unexpected(layout.error());
         }
         renderer->m_frameLayout = std::move(*layout);
+        // Vagues : 3 cascades ; 2 sur la configuration minimum (sans les vaguelettes de moins d'un mètre, rendues par la
+        // rugosité).
+        auto waves = Planetology::OceanWavesGpu::Create(device, recommended ? Planetology::OceanCascadeCount : 2u);
+        if (!waves) {
+            return std::unexpected(waves.error());
+        }
+        renderer->m_waves = std::move(*waves);
+        auto waveSampler = device.CreateSampler({.address = RHI::AddressMode::Repeat, .anisotropy = 8.0f});
+        if (!waveSampler) {
+            return std::unexpected(waveSampler.error());
+        }
+        renderer->m_waveSampler = std::move(*waveSampler);
         for (std::uint32_t f = 0; f < RHI::FramesInFlight; ++f) {
             renderer->m_frameGroups[f] = device.CreateBindGroup(*renderer->m_frameLayout);
             if (!renderer->m_frameGroups[f]) {
@@ -393,6 +422,14 @@ namespace Flux {
             renderer->m_frameGroups[f]->SetTexture(TerrainShadowDepthSlot, *renderer->m_terrainShadowMap, *renderer->m_shadowDepthSampler);
             renderer->m_frameGroups[f]->SetTexture(ForestShadowMapSlot, *renderer->m_forestShadowMap, *renderer->m_shadowSampler);
             renderer->m_frameGroups[f]->SetBuffer(TreeSlot, renderer->m_vegetation->GetInstances(f));
+            // Sans troisième cascade, la deuxième une seconde fois (non lue : FrameData::waveOffsets[1].z).
+            for (std::uint32_t c = 0; c < Planetology::OceanCascadeCount; ++c) {
+                const std::uint32_t cascade = std::min(c, renderer->m_waves->GetCascadeCount() - 1);
+                renderer->m_frameGroups[f]->SetTexture(FirstWaveDisplacementSlot + c, renderer->m_waves->GetDisplacement(cascade),
+                                                       *renderer->m_waveSampler);
+                renderer->m_frameGroups[f]->SetTexture(FirstWaveSlopesSlot + c, renderer->m_waves->GetSlopes(cascade),
+                                                       *renderer->m_waveSampler);
+            }
         }
         // Page de tuiles lue par les mesh shaders du sol et par l'herbe (mesh shaders ou sommets) : sommets, forme
         // parente, boîtes des paquets.
@@ -1014,6 +1051,7 @@ namespace Flux {
         m_thrusters.clear();
         m_planetData.clear();
         m_hasClouds = false;
+        m_waveCandidate = {};
         ++m_preparedFrame;
         m_occlusionActive = m_occlusion->Begin(frameIndex, temporal.continuous, temporal.previousViewProjection);
         ReadMeshletStats(frameIndex);
@@ -1393,6 +1431,55 @@ namespace Flux {
         draw.visible = !IsInside(scene, transform.entity, hidden);
     }
 
+    // Vagues de la mer retenue par AddPlanet (la plus proche) : réglages envoyés s'ils ont changé, plan qui suit la
+    // caméra, et ce que les shaders de l'eau en lisent (FrameData::waveOrigin et suivants).
+    void MeshRenderer::PrepareWaves() {
+        m_wavePlanetIndex = -1;
+        m_waveFrame = {};
+        m_waveFrame[0][3] = -1.0f;
+        const WaveCandidate& wave = m_waveCandidate;
+        if (wave.entity == NullEntity || !m_waves->SetSettings(wave.settings)) {
+            m_wavePlanet = NullEntity;
+            m_waveMargin = 0.0f;
+            return;
+        }
+        if (wave.entity != m_wavePlanet) {
+            m_wavePlane.Reset();
+            m_wavePlanet = wave.entity;
+        }
+        m_wavePlane.Follow(wave.camera, wave.sea);
+        if (!m_wavePlane.IsValid()) {
+            return;
+        }
+        m_wavePlanetIndex = wave.index;
+        // Crêtes à 4 écarts types (bien plus haut que la hauteur significative), poussées sur le côté par les crêtes pointues.
+        m_waveMargin = 4.0f * m_waves->GetHeightDeviation() * (1.0f + wave.settings.choppiness);
+        // L'ancrage relatif à la caméra, calculé en double : quelques mètres sous elle au lieu de milliers de km.
+        const Math::Vector3f origin(wave.center + wave.rotation.Rotate(m_wavePlane.GetAnchor()));
+        const Math::Vector3f east(wave.rotation.Rotate(m_wavePlane.GetEast()));
+        const Math::Vector3f north(wave.rotation.Rotate(m_wavePlane.GetNorth()));
+        m_waveFrame[0] = ToArray(origin, static_cast<float>(wave.index));
+        m_waveFrame[1] = ToArray(east, WaveDisplacementRange);
+        m_waveFrame[2] = ToArray(north, WaveNormalRange);
+        // Place de l'ancrage dans chaque cascade, en fraction de sa longueur : le modulo en double garde le float précis.
+        std::array<float, 6> fractions{};
+        for (std::uint32_t c = 0; c < Planetology::OceanCascadeCount; ++c) {
+            for (std::uint32_t axis = 0; axis < 2; ++axis) {
+                const double turns = m_wavePlane.GetOffset()[axis] / double{Planetology::OceanCascadeLengths[c]};
+                fractions[c * 2 + axis] = static_cast<float>(turns - std::floor(turns));
+            }
+        }
+        m_waveFrame[3] = {fractions[0], fractions[1], fractions[2], fractions[3]};
+        m_waveFrame[4] = {fractions[4], fractions[5], static_cast<float>(m_waves->GetCascadeCount()), 0.0f};
+    }
+
+    void MeshRenderer::SimulateOcean(RHI::CommandList& commands) {
+        const double time = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
+        const float seconds = m_waveTime >= 0.0 ? static_cast<float>(time - m_waveTime) : 0.0f;
+        m_waveTime = time;
+        m_waves->Update(commands, time, seconds);
+    }
+
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
     // GPU ne voit que des sommets proches de ce centre.
     void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const CraterComponent* craters, const RimLightComponent* rim,
@@ -1516,7 +1603,22 @@ namespace Flux {
         const bool ocean = added && planet.ocean;
         if (ocean) {
             m_planetData[index].water[3] = static_cast<float>(seaRadius);
+            // Vagues sur la mer la plus proche de la caméra (au-dessus ou au-dessous de sa surface).
+            const Math::Vector3d camera = transform.rotation.Conjugate().Rotate(-transform.position);
+            const double height = std::abs(Math::Length(camera) - seaRadius);
+            if (m_waveCandidate.entity == NullEntity || height < m_waveCandidate.height) {
+                m_waveCandidate = {.entity = transform.entity, .height = height, .camera = camera, .center = transform.position,
+                                   .rotation = transform.rotation, .sea = seaRadius, .index = static_cast<int>(index),
+                                   .settings = {.windSpeed = std::clamp(planet.waveWind, 0.5f, 40.0f),
+                                                .windDirection = planet.waveDirection,
+                                                .fetch = std::clamp(planet.waveFetch, 1.0f, 2000.0f) * 1000.0f,
+                                                .spread = std::clamp(planet.waveSpread, 0.2f, 4.0f),
+                                                .choppiness = std::clamp(planet.waveChoppiness, 0.0f, 2.0f),
+                                                .seed = std::bit_cast<std::uint32_t>(planet.seed)}};
+            }
         }
+        // Ce que les vagues soulèvent au-dessus de la mer : celles de l'image d'avant (une seule mer en a).
+        const float waveMargin = transform.entity == m_wavePlanet ? m_waveMargin : 0.0f;
         for (const Planetology::PlanetRenderer::Tile& tile : m_planetTiles) {
             const Math::Vector3f center(tile.center);
             // Centre de la tuile dans le repère de la planète : où fragmentPlanet lit l'altitude et le bruit.
@@ -1529,7 +1631,7 @@ namespace Flux {
             // Champ, cascades et ordre de près à loin : par la sphère englobante, pas par le point de référence.
             const Math::Vector3f sphere(tile.sphere);
             const bool water = ocean && tile.lowest < seaRadius
-                            && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest));
+                            && view.Contains(sphere, tile.radius + static_cast<float>(seaRadius - tile.lowest) + waveMargin);
             // Herbe : sur les tuiles à sa portée jusqu'à GrassMaxTileEdge, glissement vers leur parente compris (le pied
             // des brins le suit, ReadGrassPosition) ; un quart de tuile avec les mesh shaders (taskGrass ne garde que ses
             // carrés), la tuile entière seulement par les sommets. Une tuile plus grossière encore à portée (ses filles
@@ -1541,7 +1643,11 @@ namespace Flux {
             m_tileDraws.push_back({tile.tile, static_cast<std::uint32_t>(m_tileData.size()), sphere, tile.radius, tile.edge,
                                    distance, water, tile.firstIndex, tile.indexCount, tile.shadowOnly, grassTile});
             m_tileData.push_back({Math::Matrix4f::Translation(center) * rotation,
-                                  {{{x.x, x.y, x.z, tile.morphStart}, {y.x, y.y, y.z, 0.0f}, {z.x, z.y, z.z, tile.morphScale}}},
+                                  // normal[1].w : écart entre deux sommets (m), le niveau des textures des vagues
+                                  // qu'ils peuvent suivre sans crénelage (vertexOcean).
+                                  {{{x.x, x.y, x.z, tile.morphStart},
+                                    {y.x, y.y, y.z, static_cast<float>(tile.edge) / static_cast<float>(Planetology::TileQuads)},
+                                    {z.x, z.y, z.z, tile.morphScale}}},
                                   {local.x, local.y, local.z, std::bit_cast<float>(index)},
                                   {wrap(tile.local.x), wrap(tile.local.y), wrap(tile.local.z),
                                    // Altitude du centre en double : un float à des milliers de km du centre ne garde
@@ -1738,6 +1844,8 @@ namespace Flux {
         frame.forestCascade = {m_forestStart, m_forestSplit, m_forestEnd, m_forestShadows ? 1.0f : 0.0f};
         // w : secondes écoulées (vagues des océans), repartent de 0 toutes les heures pour garder leur précision.
         const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_start).count();
+        PrepareWaves();
+        frame.waves = m_waveFrame;
         frame.cameraForward = ToArray(camera.GetForward(), static_cast<float>(std::fmod(seconds, 3600.0)));
         // w : tangente du rayon apparent du soleil, la pénombre d'une ombre par mètre entre l'obstacle et le sol.
         frame.toSun = ToArray(sky.toSun, std::tan(sky.sunRadius));

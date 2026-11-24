@@ -118,6 +118,15 @@ struct FrameData
     float4 probeFaces[6 * 4];
     float4 probeEye;
     uint4 probeOptions; // x : sondes dans probes
+    // Vagues de l'océan (OceanWavesGpu) d'une seule planète, posées sur le plan tangent à sa mer sous la caméra
+    // (OceanWavePlane) : waveOrigin.xyz, point d'ancrage relatif à la caméra ; w, la planète dans planets (-1 : aucune).
+    // waveEast, waveNorth : axes x et z des cascades (xyz) ; w, portée du déplacement des sommets, puis des vagues au
+    // pixel (m). waveOffsets : place de l'ancrage dans chaque cascade (fraction de sa longueur), [0].xy, [0].zw, [1].xy ;
+    // [1].z, nombre de cascades.
+    float4 waveOrigin;
+    float4 waveEast;
+    float4 waveNorth;
+    float4 waveOffsets[2];
 };
 
 // Doit correspondre à LightData dans MeshRenderer.cpp : une lumière de la scène.
@@ -242,6 +251,14 @@ struct MaterialData
 [[vk::binding(9, 1)]] Sampler2D airMie;
 // Diffusion multiple de l'air de la planète (AtmosphereMultipleLight), pour les marches hors des tables.
 [[vk::binding(20, 1)]] Sampler2D atmosphereMultiple;
+// Vagues de l'océan, une texture par cascade (OceanWavesGpu) : déplacement (x, hauteur, z ; a : écume), pentes
+// (d hauteur / dx, d hauteur / dz, d x / dx, d z / dz). Sans troisième cascade, la deuxième une seconde fois.
+[[vk::binding(25, 1)]] Sampler2D waveDisplacement0;
+[[vk::binding(26, 1)]] Sampler2D waveDisplacement1;
+[[vk::binding(27, 1)]] Sampler2D waveDisplacement2;
+[[vk::binding(28, 1)]] Sampler2D waveSlopes0;
+[[vk::binding(29, 1)]] Sampler2D waveSlopes1;
+[[vk::binding(30, 1)]] Sampler2D waveSlopes2;
 
 // Groupe 2 : tables de tous les modèles chargés (ModelCache). Images des matériaux, choisies par indice : couleurs en
 // sRGB (le GPU les ramène en linéaire à la lecture), données (métal-rugosité, normales, occlusion) telles quelles.
@@ -2256,8 +2273,86 @@ float3 UntexturedGround(PlanetSurface v, PlanetData planet, float3 local, inout 
     return color * params.color.rgb;
 }
 
+// Vagues de l'océan (FrameData::waveOrigin et suivants) : longueur de chaque cascade (Planetology::OceanCascadeLengths)
+// et côté de ses textures (Planetology::OceanWaveSize).
+static const float WaveLengths[3] = {250.0, 37.0, 7.3};
+static const float WaveTexels = 256.0;
+// Les vagues meurent sur les hauts-fonds : entières à partir de cette profondeur (m).
+static const float WaveShoreDepth = 8.0;
+
+// La mer de cette tuile porte les vagues.
+bool HasWaves(DrawData draw)
+{
+    return frame[0].waveOrigin.w == float(asuint(draw.rim.w));
+}
+
+// Coordonnées (m) dans le plan des vagues d'un point relatif à la caméra.
+float2 WavePlane(float3 worldPosition)
+{
+    const FrameData f = frame[0];
+    const float3 d = worldPosition - f.waveOrigin.xyz;
+    return float2(dot(d, f.waveEast.xyz), dot(d, f.waveNorth.xyz));
+}
+
+float2 WaveUv(float2 plane, uint cascade)
+{
+    const FrameData f = frame[0];
+    const float2 offset = cascade == 0 ? f.waveOffsets[0].xy : (cascade == 1 ? f.waveOffsets[0].zw : f.waveOffsets[1].xy);
+    return plane / WaveLengths[cascade] + offset;
+}
+
+uint WaveCascadeCount()
+{
+    return uint(frame[0].waveOffsets[1].z);
+}
+
+// Déplacement de l'eau (x, hauteur, z du plan des vagues, en m) pour des sommets écartés de `spacing` m : chaque cascade
+// lue au niveau de mip où ses ondes font au moins deux écarts (sans crénelage), effacée quand il ne lui reste presque rien.
+float3 WaveDisplacementAt(float2 plane, float spacing)
+{
+    float3 sum = float3(0.0);
+    for (uint c = 0; c < WaveCascadeCount(); ++c) {
+        const float lod = log2(max(2.0 * spacing * WaveTexels / WaveLengths[c], 1.0));
+        const float weight = saturate(7.0 - lod);
+        if (weight <= 0.0) {
+            continue;
+        }
+        const float2 uv = WaveUv(plane, c);
+        const float3 d = c == 0 ? waveDisplacement0.SampleLevel(uv, lod).xyz
+                                : (c == 1 ? waveDisplacement1.SampleLevel(uv, lod).xyz : waveDisplacement2.SampleLevel(uv, lod).xyz);
+        sum += d * weight;
+    }
+    return sum;
+}
+
+// Pentes de la mer (d hauteur / dx, d hauteur / dz, d x / dx, d z / dz, sommées sur les cascades) et écume, au pixel :
+// les dérivées de `plane` à l'écran choisissent le niveau de mip (filtrage anisotrope), hors de tout branchement.
+float4 WaveSlopesAt(float2 plane, float2 planeDx, float2 planeDy, out float foam)
+{
+    float4 sum = float4(0.0);
+    foam = 0.0;
+    for (uint c = 0; c < WaveCascadeCount(); ++c) {
+        const float2 uv = WaveUv(plane, c);
+        const float2 dx = planeDx / WaveLengths[c];
+        const float2 dy = planeDy / WaveLengths[c];
+        if (c == 0) {
+            sum += waveSlopes0.SampleGrad(uv, dx, dy);
+            foam += waveDisplacement0.SampleGrad(uv, dx, dy).w;
+        } else if (c == 1) {
+            sum += waveSlopes1.SampleGrad(uv, dx, dy);
+            foam += waveDisplacement1.SampleGrad(uv, dx, dy).w;
+        } else {
+            sum += waveSlopes2.SampleGrad(uv, dx, dy);
+            foam += waveDisplacement2.SampleGrad(uv, dx, dy).w;
+        }
+    }
+    foam = saturate(foam);
+    return sum;
+}
+
 // Océan : les tuiles de la planète posées sur la sphère du niveau de la mer, le long de la verticale de chaque
-// sommet. uv.x : profondeur de l'eau au sommet (négative sur la terre ferme, que le sol cache de toute façon).
+// sommet, puis soulevées par les vagues près de la caméra. uv.x : profondeur de l'eau au sommet (négative sur la terre
+// ferme, que le sol cache de toute façon).
 [shader("vertex")]
 OceanVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_VulkanInstanceID)
 {
@@ -2268,8 +2363,22 @@ OceanVertexOutput vertexOcean(PlanetVertexInput input, uint drawIndex : SV_Vulka
     const float3 local = draw.rim.xyz + ground;
     const float3 up = normalize(local);
     const float depth = planet.water.w - length(local);
+    float3 position = ground + up * depth;
+    if (HasWaves(draw)) {
+        const FrameData f = frame[0];
+        const float3 world = Transform(draw.world, position).xyz;
+        const float fade = saturate(1.0 - length(world) / f.waveEast.w) * saturate(depth / WaveShoreDepth);
+        if (fade > 0.0) {
+            // normal[1].w : écart entre les sommets de la tuile, doublé en glissant vers sa parente.
+            const float3 d = WaveDisplacementAt(WavePlane(world), draw.normal[1].w * (1.0 + morph)) * fade;
+            // Le côté dans le repère de la planète (la matrice des normales d'une tuile est une rotation), la hauteur
+            // le long de la verticale du sommet.
+            const float3 side = f.waveEast.xyz * d.x + f.waveNorth.xyz * d.z;
+            position += float3(dot(side, draw.normal[0].xyz), dot(side, draw.normal[1].xyz), dot(side, draw.normal[2].xyz)) + up * d.y;
+        }
+    }
     OceanVertexOutput output;
-    output.base = ToOceanSurface(Output(drawIndex, ground + up * depth, up, float2(depth, 0.0)));
+    output.base = ToOceanSurface(Output(drawIndex, position, up, float2(depth, 0.0)));
     output.planetPosition = up * planet.water.w;
     output.airScattered = AirTo(output.base.worldPosition, output.airTransmittance);
     output.seaSky = float3(0.0);
@@ -2324,24 +2433,45 @@ OceanOutput fragmentOcean(OceanVertexOutput input)
     const float3 up = normalize(local);
     const float distance = length(v.worldPosition);
     const float time = frame[0].cameraForward.w;
-    float3 n = up;
-    const float waves = saturate(1.0 - distance / 2000.0);
-    if (waves > 0.0) {
-        float3 slope = WaveSlope(local * (1.0 / 9.0) + float3(time * 0.21, 0.0, time * 0.13)) * 0.6
-                     + WaveSlope(local * (1.0 / 2.3) + float3(-time * 0.37, time * 0.29, 0.0)) * 0.4;
-        slope -= up * dot(slope, up);
-        n = normalize(up - slope * (0.25 * waves));
-    }
-    const float3 normal = normalize(draw.normal[0].xyz * n.x + draw.normal[1].xyz * n.y + draw.normal[2].xyz * n.z);
     const float3 worldUp = normalize(draw.normal[0].xyz * up.x + draw.normal[1].xyz * up.y + draw.normal[2].xyz * up.z);
     const FrameData f = frame[0];
+    // Coordonnées des vagues et leurs dérivées à l'écran, avant tout branchement (elles en ont besoin).
+    const float2 plane = WavePlane(v.worldPosition);
+    const float2 planeDx = ddx(plane);
+    const float2 planeDy = ddy(plane);
+    float3 normal = worldUp;
+    float foam = 0.0;
+    // De loin, les vagues qu'on ne dessine plus élargissent le reflet du soleil.
+    float roughness = lerp(0.06, 0.22, saturate(distance / 20000.0));
+    if (HasWaves(draw)) {
+        // Vagues de la simulation (OceanWavesGpu) : normale du déplacement (les crêtes pointues, dx / dx et dz / dz,
+        // resserrent la surface et raidissent la pente), écume là où elles se replient.
+        const float fade = saturate(1.0 - distance / f.waveNorth.w) * saturate(depth / WaveShoreDepth);
+        if (fade > 0.0) {
+            const float4 slopes = WaveSlopesAt(plane, planeDx, planeDy, foam) * fade;
+            const float2 tilt = slopes.xy / max(1.0 + slopes.zw, 0.2);
+            normal = normalize(worldUp - f.waveEast.xyz * tilt.x - f.waveNorth.xyz * tilt.y);
+            foam *= fade;
+        }
+        roughness = lerp(0.04, 0.22, saturate(distance / f.waveNorth.w));
+    } else {
+        // Les autres mers : vaguelettes de près, pente d'un bruit qui glisse avec le temps.
+        const float waves = saturate(1.0 - distance / 2000.0);
+        if (waves > 0.0) {
+            float3 slope = WaveSlope(local * (1.0 / 9.0) + float3(time * 0.21, 0.0, time * 0.13)) * 0.6
+                         + WaveSlope(local * (1.0 / 2.3) + float3(-time * 0.37, time * 0.29, 0.0)) * 0.4;
+            slope -= up * dot(slope, up);
+            const float3 n = normalize(up - slope * (0.25 * waves));
+            normal = normalize(draw.normal[0].xyz * n.x + draw.normal[1].xyz * n.y + draw.normal[2].xyz * n.z);
+        }
+    }
     Surface surface;
     surface.normal = normal;
     surface.toEye = normalize(-v.worldPosition);
-    surface.diffuse = float3(0.0); // la couleur de l'eau vient de dessous (plus bas), pas de sa surface
+    // La couleur de l'eau vient de dessous (plus bas), pas de sa surface ; l'écume, blanche et mate, est dessus.
+    surface.diffuse = float3(0.85 * foam);
     surface.f0 = float3(0.02);
-    // De loin, les vagues qu'on ne dessine plus élargissent le reflet du soleil.
-    surface.roughness = lerp(0.06, 0.22, saturate(distance / 20000.0));
+    surface.roughness = lerp(roughness, 0.7, foam);
     const float nv = saturate(dot(normal, surface.toEye));
     const float fresnel = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
 
@@ -2361,12 +2491,14 @@ OceanOutput fragmentOcean(OceanVertexOutput input)
         skyLight = AtmosphereAmbient(f.atmosphere, center, worldUp, f.toSun.xyz);
     }
     // Sous la surface : la couleur de l'eau, éclairée par le soleil et le ciel.
-    const float3 body = planet.water.rgb * (sunLight * saturate(sunFacing) + skyLight + f.environment.x * 0.05);
-    const float3 lit = Shade(surface, f.toSun.xyz, sunLight) + sky * fresnel + body * (1.0 - fresnel)
-                     + SceneLights(v.worldPosition, surface);
+    const float3 ambient = skyLight + f.environment.x * 0.05;
+    const float3 body = planet.water.rgb * (sunLight * saturate(sunFacing) + ambient);
+    const float3 lit = Shade(surface, f.toSun.xyz, sunLight) + (sky * fresnel + body * (1.0 - fresnel)) * (1.0 - foam)
+                     + surface.diffuse * ambient + SceneLights(v.worldPosition, surface);
 
-    // Opaque à partir de quelques mètres de fond ; le reflet compte d'autant plus qu'on regarde de biais (Fresnel).
-    const float alpha = saturate(max(1.0 - exp(-depth / 4.0), fresnel));
+    // Opaque à partir de quelques mètres de fond, et sous l'écume ; le reflet compte d'autant plus qu'on regarde de
+    // biais (Fresnel).
+    const float alpha = saturate(max(max(1.0 - exp(-depth / 4.0), fresnel), foam));
     const float3 rim = PlanetRim(planet, worldUp, surface.toEye);
     OceanOutput output;
     output.color = float4(Radiance((lit * input.airTransmittance + input.airScattered + rim) * alpha), alpha); // prémultiplié

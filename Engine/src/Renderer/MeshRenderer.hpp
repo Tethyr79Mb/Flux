@@ -6,6 +6,7 @@
 #include "Flux/Renderer/ModelDetail.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Planetology/GroundTextures.hpp"
+#include "Planetology/OceanWavesGpu.hpp"
 #include "Renderer/ModelCache.hpp"
 #include "Renderer/OcclusionCulling.hpp"
 #include "Renderer/RayTracingScene.hpp"
@@ -87,6 +88,10 @@ namespace Flux {
         void SowTrees(RHI::CommandList& commands, std::uint32_t frameIndex);
         void CullTrees(RHI::CommandList& commands, std::uint32_t frameIndex);
         void CullHidden(RHI::CommandList& commands, std::uint32_t frameIndex);
+        // Vagues de la mer la plus proche de la caméra (OceanWavesGpu), avant la passe principale ; rien à faire à cette
+        // image si HasOceanWaves est faux (aucun océan dans la scène).
+        bool HasOceanWaves() const { return m_wavePlanetIndex >= 0; }
+        void SimulateOcean(RHI::CommandList& commands);
         // Après la passe principale (sa profondeur lisible), de taille `size` : de quoi écarter à l'image suivante ce
         // qui sera caché (OcclusionCulling).
         void BuildDepthPyramid(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::Texture& depth, RHI::Extent size);
@@ -206,6 +211,7 @@ namespace Flux {
         void DrawTransparent(RHI::CommandList& commands, std::uint32_t frameIndex) const;
 
         private:
+        void PrepareWaves();
         // Une entité à dessiner : son modèle et ses matrices, calculées pour l'image.
         struct MeshDraw
         {
@@ -622,6 +628,29 @@ namespace Flux {
         Pipelines m_tree;
         // Océans : les mêmes tuiles, posées sur la sphère du niveau de la mer (vertexOcean, fragmentOcean).
         Pipelines m_ocean;
+        // Vagues : celles d'une seule mer à la fois, la plus proche de la caméra (AddPlanet la choisit), posées sur le plan
+        // tangent qui la suit (OceanWavePlane). Textures liées une fois pour toutes au groupe de chaque image.
+        std::unique_ptr<Planetology::OceanWavesGpu> m_waves;
+        std::unique_ptr<RHI::Sampler> m_waveSampler;
+        Planetology::OceanWavePlane m_wavePlane;
+        Entity m_wavePlanet = NullEntity;         // planète du plan (un changement le repose)
+        // La mer la plus proche de cette image, et ce qu'il en faut.
+        struct WaveCandidate
+        {
+            Entity entity = NullEntity;
+            double height = 0.0;   // m de la caméra au-dessus de la mer
+            Math::Vector3d camera; // caméra dans le repère de la planète
+            Math::Vector3d center; // centre de la planète, relatif à la caméra
+            Math::Quaternionf rotation;
+            double sea = 0.0;      // rayon de la mer (m)
+            int index = -1;        // dans m_planetData
+            Planetology::OceanWaveSettings settings;
+        };
+        WaveCandidate m_waveCandidate;
+        int m_wavePlanetIndex = -1;               // dans m_planetData, -1 : pas de vagues à cette image
+        float m_waveMargin = 0.0f;                // m : ce que les vagues soulèvent au plus (sphères des tuiles d'eau)
+        double m_waveTime = -1.0;                 // s, à la dernière simulation
+        std::array<std::array<float, 4>, 5> m_waveFrame{}; // FrameData::waveOrigin à waveOffsets
         bool m_hasClouds = false; // une planète de l'image a des nuages
         std::chrono::steady_clock::time_point m_start = std::chrono::steady_clock::now(); // vagues
         // Groupe 1, un par image en vol : os, entités, données de l'image, carte d'ombres.

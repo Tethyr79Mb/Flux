@@ -88,6 +88,14 @@ Avec un océan, caméra au-dessus de la mer, l'horizon est celui de la mer : rie
 le fond et les terres basses qui passent dessous ne sont plus gardés. Le fond vu au travers de l'eau ne le serait qu'en
 rasant la surface, où elle reflète tout (fresnel de `fragmentOcean`).
 
+**Vagues** (groupe Océan de Planète : vent, direction, étendue du vent, crêtes pointues, mer croisée) : simulées par le
+GPU à chaque image (`OceanWavesGpu`, FFT de Tessendorf, 3 cascades de 250, 37 et 7,3 m qui se répètent), sur la mer la
+plus proche de la caméra seulement. Elles se posent sur un plan tangent à la mer sous la caméra (`OceanWavePlane`) qui
+la suit sans faire glisser l'eau. Les sommets de l'eau sont soulevés jusqu'à 4 km, chaque cascade lue au niveau de mip
+que l'écart des sommets de la tuile peut suivre ; normales et écume au pixel jusqu'à 20 km ; au-delà, une rugosité.
+Elles meurent sur les hauts-fonds (moins de 8 m d'eau). Limite : les tuiles de l'eau sont celles du sol, coupées selon la
+distance au fond : par grand fond, leurs sommets sont trop écartés pour les petites cascades (seule la houle bouge).
+
 ### Le relief : une formule, en deux exemplaires
 
 Le relief est une formule : la hauteur dans une direction donnée. Rien n'est stocké, et le terrain n'est pas creusable
