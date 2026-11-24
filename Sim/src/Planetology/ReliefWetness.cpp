@@ -17,9 +17,9 @@ namespace Flux::Planetology {
             double around = 0.0;
             for (std::uint32_t k = 0; k < 4; ++k) {
                 const Math::Vector3d t = (k < 2 ? t1 : t2) * (k % 2 == 0 ? epsilon : -epsilon);
-                around += terrain.GetHeight((d + t) * scale, octaves);
+                around += terrain.GetReliefHeight((d + t) * scale, octaves);
             }
-            const double hollow = 0.25 * around - terrain.GetHeight(d, octaves);
+            const double hollow = 0.25 * around - terrain.GetReliefHeight(d, octaves);
             const double depth = std::max(0.01 * terrain.GetRelief(), 2.0);
             return hollow / (std::abs(hollow) + depth);
         }

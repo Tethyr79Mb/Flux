@@ -52,7 +52,7 @@ namespace {
             };
             tiles.clear();
             renderer.BeginFrame(0);
-            renderer.Collect(static_cast<Entity>(1), planet, nullptr, position, Math::Quaternionf{}, inView, tiles);
+            renderer.Collect(static_cast<Entity>(1), planet, nullptr, nullptr, position, Math::Quaternionf{}, inView, tiles);
             renderer.EndFrame(0);
             return device.Submit([&](RHI::CommandList& commands) { renderer.Compute(commands, 0); });
         };
@@ -141,7 +141,7 @@ namespace {
                 time += std::chrono::duration_cast<std::chrono::steady_clock::duration>(moving > 0 ? step : std::chrono::duration<double>(1.0 / 60.0));
                 tiles.clear();
                 renderer.BeginFrame(0, time);
-                renderer.Collect(static_cast<Entity>(1), planet, nullptr, position, Math::Quaternionf{}, inView, tiles);
+                renderer.Collect(static_cast<Entity>(1), planet, nullptr, nullptr, position, Math::Quaternionf{}, inView, tiles);
                 renderer.EndFrame(0);
                 if (!device.Submit([&](RHI::CommandList& commands) { renderer.Compute(commands, 0); })) {
                     return std::unexpected(std::string("envoi au GPU"));
@@ -272,8 +272,18 @@ bool RunPlanetGpuTests() {
                                                                          .smallShare = 1.2, .depth = 0.18, .rimHeight = 0.05,
                                                                          .wear = 0.6, .complexRadius = 1500.0}});
     CHECK(moon.GetCraterOctaves() == 10 && moon.GetCraterShift() == 5);
+    // La petite planète creusée par sa carte d'érosion (TileInputs::carve), avec la mer.
+    Planetology::ErosionSettings valleys;
+    valleys.sea = true;
+    valleys.seaHeight = -0.1 * small.GetRelief();
+    const Planetology::Terrain eroded = [&] {
+        Planetology::Terrain terrain = small;
+        terrain.SetErosion(std::make_shared<const Planetology::ErosionMap>(Planetology::ErosionMap::Build(small, valleys)));
+        return terrain;
+    }();
+    CHECK(eroded.GetErosion() && eroded.GetErosionDepth() > 0.0);
     std::vector<Case> cases;
-    for (const Planetology::Terrain* terrain : {&small, &large, &earth, &moon}) {
+    for (const Planetology::Terrain* terrain : {&small, &large, &earth, &moon, &eroded}) {
         const std::uint32_t max = terrain->GetMaxLevel();
         const std::uint32_t middle = max / 2;
         cases.push_back({terrain, {0, 0, 0, 0}});
@@ -312,6 +322,21 @@ bool RunPlanetGpuTests() {
             cases.push_back({terrain, Planetology::FindTile(bottom, max)});
             cases.push_back({terrain, Planetology::FindTile(Math::Normalize(bottom + Math::Vector3d{0.03, 0.0, 0.0}), max)});
         }
+        if (const Planetology::ErosionMap* map = terrain->GetErosion()) {
+            // Au plus creusé de la carte, au niveau de ses points, plus fin, et au plus fin ; et contre la couture de
+            // deux faces (les rangées hors de la face y sont prises sur la voisine).
+            std::uint32_t deepest = 0;
+            for (std::uint32_t node = 0; node < map->GetNodeCount(); ++node) {
+                deepest = map->GetCarve(node) < map->GetCarve(deepest) ? node : deepest;
+            }
+            const Math::Vector3d river = map->GetNodeDirection(deepest);
+            CHECK(map->GetCarve(deepest) < -10.0f);
+            cases.push_back({terrain, Planetology::FindTile(river, map->GetLevel())});
+            cases.push_back({terrain, Planetology::FindTile(river, map->GetLevel() + 3)});
+            cases.push_back({terrain, Planetology::FindTile(river, max)});
+            const std::uint32_t edge = map->GetLevel() + 1;
+            cases.push_back({terrain, {1, static_cast<std::uint8_t>(edge), (1u << edge) - 1u, (1u << edge) / 3u}});
+        }
     }
 
     // Toutes dans la même page : chacune doit écrire dans sa case.
@@ -338,7 +363,7 @@ bool RunPlanetGpuTests() {
         // Erreur permise : le float du relief, le millimètre, et celui de la position et de la déformation, relatifs au
         // centre de la tuile : quelques 1e-5 de sa taille aux pointes des sommets (30 cm sur une tuile de 20 km d'une
         // Terre, vue de plus de 20 km ; un millimètre sur celles du sol, où se fait la collision).
-        const double tolerance = 0.005 + 3.0e-5 * mesh.radius + 4.0e-6 * (c.terrain->GetRelief() + c.terrain->GetCraterDepth());
+        const double tolerance = 0.005 + 3.0e-5 * mesh.radius + 4.0e-6 * (c.terrain->GetRelief() + c.terrain->GetCraterDepth() + c.terrain->GetErosionDepth());
         double worst = 0.0;
         for (std::uint32_t v = 0; v < Planetology::TileVertexCount; ++v) {
             const double error = Math::Length(Math::Vector3d(vertices[v].position) - Math::Vector3d(mesh.vertices[v].position));

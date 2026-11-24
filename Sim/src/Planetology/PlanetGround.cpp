@@ -334,14 +334,21 @@ namespace Flux::Planetology {
             }
             PlanetState& state = m_planets[entity];
             const CraterComponent* craters = scene.GetRegistry().try_get<CraterComponent>(entity);
-            if (const ReliefShape shape = GetReliefShape(planet, craters); !state.terrain || planet.radius != state.radius
+            const ErosionComponent* erosion = scene.GetRegistry().try_get<ErosionComponent>(entity);
+            if (const ReliefShape shape = GetReliefShape(planet, craters, erosion); !state.terrain || planet.radius != state.radius
                 || planet.relief != state.relief || planet.seed != state.seed || shape != state.shape) {
-                RemoveTiles(system, state);
-                state.terrain = std::make_shared<const Terrain>(planet, craters);
-                state.radius = planet.radius;
-                state.relief = planet.relief;
-                state.seed = planet.seed;
-                state.shape = shape;
+                // Sa carte d'érosion pas encore prête : l'ancien sol reste en attendant, ou aucun.
+                if (std::shared_ptr<const Terrain> terrain = MakeTerrain(planet, craters, erosion, wait)) {
+                    RemoveTiles(system, state);
+                    state.terrain = std::move(terrain);
+                    state.radius = planet.radius;
+                    state.relief = planet.relief;
+                    state.seed = planet.seed;
+                    state.shape = shape;
+                } else if (!state.terrain) {
+                    m_planets.erase(entity);
+                    continue;
+                }
             }
             const Math::Vector3d position = Math::Delta(anchor, scene.GetWorldPosition(entity));
             const Math::Quaternionf rotation = scene.GetWorldRotation(entity);

@@ -107,6 +107,6 @@ namespace Flux::Planetology {
         std::array<Frame, RHI::FramesInFlight> m_frames;
         std::vector<Page> m_pages;
         std::uint32_t m_tileCount = 0; // cases créées
-        TileGpuInputs m_inputs; // 2,5 Ko : pas sur la pile
+        TileGpuInputs m_inputs; // 8 Ko : pas sur la pile
     };
 }

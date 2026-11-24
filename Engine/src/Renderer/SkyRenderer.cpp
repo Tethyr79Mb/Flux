@@ -475,7 +475,8 @@ namespace Flux {
                 // Le sol le plus bas possible (la mer, caméra au-dessus d'elle) : le rayon du ciel n'est pas le sol. Sous
                 // l'horizon de ce rayon, une plaine plus basse laissait voir le ciel peint en sol noir, en bande.
                 chosenGround = std::max(static_cast<double>(parameters.radius) - planet.relief
-                                            - Planetology::GetCraterDepth(planet, scene.TryGet<CraterComponent>(entity)), 1.0);
+                                            - Planetology::GetCraterDepth(planet, scene.TryGet<CraterComponent>(entity),
+                                                                            scene.TryGet<ErosionComponent>(entity)), 1.0);
                 if (const double sea = Planetology::PlanetRenderer::GetSeaRadius(planet);
                     planet.ocean && sea > chosenGround && Math::Length(center) > sea) {
                     chosenGround = sea;

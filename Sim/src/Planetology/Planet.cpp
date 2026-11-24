@@ -343,11 +343,14 @@ namespace Flux::Planetology {
         }
     }
 
-    double GetCraterDepth(const PlanetComponent& planet, const CraterComponent* craters) {
-        return craters ? MakeCraterLayout(std::max(static_cast<double>(planet.radius), 1.0), GetReliefShape(planet, craters).craters).depth : 0.0;
+    double GetCraterDepth(const PlanetComponent& planet, const CraterComponent* craters, const ErosionComponent* erosion) {
+        const double crater = craters ? MakeCraterLayout(std::max(static_cast<double>(planet.radius), 1.0), GetReliefShape(planet, craters).craters).depth : 0.0;
+        // La carte creuse au plus valleyDepth x relief (ErosionMap::GetDepth), connue avant qu'elle soit calculée.
+        const double valleys = erosion ? std::max(static_cast<double>(erosion->valleyDepth), 0.0) * std::max(static_cast<double>(planet.relief), 0.0) : 0.0;
+        return crater + valleys;
     }
 
-    ReliefShape GetReliefShape(const PlanetComponent& planet, const CraterComponent* craters) {
+    ReliefShape GetReliefShape(const PlanetComponent& planet, const CraterComponent* craters, const ErosionComponent* erosion) {
         ReliefShape shape{.mountainWidth = planet.mountainWidth, .zoneWidth = planet.zoneWidth, .continentWidth = planet.continentWidth,
                           .mountainShare = planet.mountainShare, .hillShare = planet.hillShare, .hillHeight = planet.hillHeight,
                           .peakDensity = planet.peakDensity, .plainRoughness = planet.plainRoughness,
@@ -358,7 +361,32 @@ namespace Flux::Planetology {
                              .smallShare = craters->smallShare, .depth = craters->depth, .rimHeight = craters->rimHeight,
                              .wear = craters->wear, .complexRadius = craters->complexRadius};
         }
+        if (erosion && planet.relief > 0.0f) { // sans relief, pas de pente où l'eau coule
+            shape.eroded = true;
+            shape.valleys = {.cellSize = erosion->cellSize, .strength = erosion->strength, .rain = erosion->rain,
+                             .valleyDepth = erosion->valleyDepth, .valleySlope = erosion->valleySlope,
+                             .channelArea = erosion->channelArea, .sea = planet.ocean,
+                             .seaHeight = planet.seaLevel * 0.01 * planet.relief};
+        }
         return shape;
+    }
+
+    void Terrain::SetErosion(std::shared_ptr<const ErosionMap> erosion) {
+        m_erosion = erosion && !erosion->IsEmpty() ? std::move(erosion) : nullptr;
+    }
+
+    std::shared_ptr<const Terrain> MakeTerrain(const PlanetComponent& planet, const CraterComponent* craters,
+                                               const ErosionComponent* erosion, bool wait) {
+        const ReliefShape shape = GetReliefShape(planet, craters, erosion);
+        auto terrain = std::make_shared<Terrain>(planet.radius, planet.relief, planet.seed, shape);
+        if (shape.eroded) {
+            std::shared_ptr<const ErosionMap> map = ErosionMap::Request(*terrain, shape.valleys, wait);
+            if (!map) {
+                return nullptr;
+            }
+            terrain->SetErosion(std::move(map));
+        }
+        return terrain;
     }
 
     Terrain::Terrain(const PlanetComponent& planet, const CraterComponent* craters)
@@ -763,6 +791,11 @@ namespace Flux::Planetology {
     }
 
     double Terrain::GetHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones) const {
+        const double height = GetReliefHeight(direction, octaves, zones);
+        return m_erosion ? height + m_erosion->GetCarve(direction) : height;
+    }
+
+    double Terrain::GetReliefHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones) const {
         // Cratères : en mètres, ajoutés au relief (une lune peut n'avoir qu'eux).
         const double craters = m_craterOctaves > 0 ? Craters(direction, octaves) : 0.0;
         if (m_relief <= 0.0) {
@@ -841,7 +874,7 @@ namespace Flux::Planetology {
     }
 
     TileBounds GetTileBounds(const Terrain& terrain, TileKey key) {
-        return GetTileBounds(terrain, key, terrain.GetRadius() - 1.5 * terrain.GetRelief() - terrain.GetCraterDepth() - 1.0,
+        return GetTileBounds(terrain, key, terrain.GetRadius() - 1.5 * terrain.GetRelief() - terrain.GetCraterDepth() - terrain.GetErosionDepth() - 1.0,
                              terrain.GetRadius() + terrain.GetRelief() + terrain.GetCraterRise());
     }
 
@@ -1018,6 +1051,34 @@ namespace Flux::Planetology {
                                | terrain.GetCraterShift() << 24};
         const WetnessLayout wetness = GetWetnessLayout(terrain, key.level);
         inputs.wetness = {wetness.octaves, wetness.side, std::bit_cast<std::uint32_t>(wetness.fade), 0};
+        // Creusement de l'érosion aux sommets de la grille, jupes et rangées des normales comprises : le même que
+        // GetHeight (à l'arrondi du double près), en float il ne demande rien de plus au GPU. Une tuile sans vallée
+        // n'envoie rien.
+        if (const ErosionMap* erosion = terrain.GetErosion()) {
+            constexpr std::uint32_t C = TileGpuInputs::Columns;
+            const double n = static_cast<double>(erosion->GetResolution());
+            std::array<double, C> u{};
+            std::array<double, C> v{};
+            for (std::uint32_t i = 0; i < C; ++i) {
+                u[i] = (GridToFace(x0 + static_cast<std::int64_t>(i) - 2, key.level) + 1.0) * 0.5 * n;
+                v[i] = (GridToFace(y0 + static_cast<std::int64_t>(i) - 2, key.level) + 1.0) * 0.5 * n;
+            }
+            erosion->SampleGrid(key.face, u, v, inputs.carve.data());
+            // Rangées hors de la face (tuile du bord) : sur la face voisine, par la direction comme GetHeight.
+            bool carved = false;
+            for (std::uint32_t j = 0; j < C; ++j) {
+                for (std::uint32_t i = 0; i < C; ++i) {
+                    float& carve = inputs.carve[j * C + i];
+                    if (u[i] < 0.0 || u[i] > n || v[j] < 0.0 || v[j] > n) {
+                        const Math::Vector3d d = DirectionFromFace(key.face, GridToFace(x0 + static_cast<std::int64_t>(i) - 2, key.level),
+                                                                   GridToFace(y0 + static_cast<std::int64_t>(j) - 2, key.level));
+                        carve = static_cast<float>(erosion->GetCarve(d));
+                    }
+                    carved |= carve != 0.0f;
+                }
+            }
+            inputs.wetness[3] = carved ? 1u : 0u;
+        }
         const Terrain::ShapeConstants& shape = terrain.GetShapeConstants();
         const auto narrow = [](double v) { return static_cast<float>(v); };
         inputs.shape = {{{narrow(shape.chainStart), narrow(shape.chainEnd), narrow(shape.hillStart), narrow(shape.hillEnd)},

@@ -344,6 +344,20 @@ namespace Flux {
         float complexRadius = 3000.0f; // m, rayon à partir duquel un cratère prend un fond plat et un pic central
     };
 
+    // Érosion d'une planète (modificateur du relief, sur l'entité de son PlanetComponent) : de vraies vallées, creusées
+    // par l'eau qui coule de la pluie jusqu'à la mer (ou au point le plus bas), sur une carte de toute la planète
+    // (Flux/Planetology/ErosionMap.hpp). Calculée une fois depuis la graine sur un fil à part (plusieurs secondes sur
+    // une grande planète), puis relue du cache bin/Cache ; le détail fin du relief reste par-dessus.
+    struct ErosionComponent
+    {
+        float cellSize = 1000.0f;   // m, finesse de la carte (au plus 2 048 mailles par côté de face)
+        float strength = 1.0f;      // vitesse de creusement des cours d'eau
+        float rain = 1.0f;          // pluie (débit de chaque maille)
+        float valleyDepth = 0.3f;   // creusement le plus profond, en fraction du relief
+        float valleySlope = 20.0f;  // °, pente des versants des vallées
+        float channelArea = 4.0f;   // mailles drainées à partir desquelles l'eau creuse (en dessous : crêtes intactes)
+    };
+
     // Végétation d'une planète (sur l'entité de son PlanetComponent) : des arbres semés par le GPU autour de la caméra,
     // toujours aux mêmes endroits (Planetology/VegetationRenderer.hpp). Seulement là où pousserait l'herbe du sol : pente
     // douce, assez humide, ni plage, ni neige, ni gel ; en forêts (cover : part de ces plaines couverte) plutôt
