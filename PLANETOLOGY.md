@@ -338,7 +338,9 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
   CPU envoie à chaque tuile le creusement de ses 37 x 37 points (`TileGpuInputs::carve`, 15 µs par tuile), le GPU
   l'ajoute (bilinéaire pour les arbres). Carte calculée sur un fil à part : l'ancien relief reste affiché en attendant.
   À faire : lits des rivières, sol et végétation des berges, puis l'eau des rivières et des lacs. Coût (4 cœurs à
-  2 GHz) : 0,7 s pour 200 km de rayon (256 mailles par face) ; 1 000 km : 14 s et 0,4 Go à 1 024 mailles (1,5 km),
-  64 s à 2 048 (770 m, réglage par défaut ; le remplissage des creux, sur un seul fil, en prend les deux tiers). Limites : débit sans climat (pluie partout égale) ; l'eau suit une des 8 directions, d'où des bouts de
-  rivière droits ; vallées étroites (une à deux mailles).
+  2 GHz) : 0,5 s pour 200 km de rayon (256 mailles par face) ; 1 000 km : 28 s et 1,4 Go le temps du calcul à
+  2 048 mailles (770 m, réglage par défaut), dont 13 s pour les hauteurs de départ (sur tous les cœurs) et 11 s pour
+  le remplissage des creux (sur un seul fil) ; creusement et débit partagés entre les fils par bassin versant, chemins
+  de l'eau refaits toutes les 8 passes. Limites : débit sans climat (pluie partout égale) ; l'eau suit une des 8
+  directions, d'où des bouts de rivière droits ; vallées étroites (une à deux mailles).
 - ⬜ 10. Rochers et cailloux posés sur le sol en instancing, plutôt que des octaves toujours plus fines.

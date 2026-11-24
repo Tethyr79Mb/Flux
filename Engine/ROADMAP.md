@@ -261,7 +261,8 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
   calculée au chargement depuis la graine, sur le CPU et déterministe, gardée dans `bin/Cache` (`ErosionMap`, voir
   l'étape 9 de `PLANETOLOGY.md`). Fait : la carte (lacs, débit, vallées creusées) et ses tests, dans le relief affiché et
   la collision (composant « Érosion »). À faire : lits des rivières, berges et végétation, eau des rivières et des lacs ;
-  calcul plus rapide sur les grandes planètes (64 s la première fois pour 1 000 km de rayon).
+  calcul encore long sur les grandes planètes (28 s la première fois pour 1 000 km de rayon sur 4 cœurs à 2 GHz,
+  le remplissage des creux reste sur un seul fil).
 - 🔧 Arbres semés et triés par le GPU (`VegetationComponent`) : 3 niveaux de détail (détaillé, simplifié qui fait
   aussi les ombres, imposteur octaédrique au loin), vent, jusqu'à 5 km par défaut, puis la couleur des forêts sur le
   sol (visible de haut et de l'espace). Imposteurs (`TreeImpostors`) : le modèle détaillé de chaque espèce pris par le
