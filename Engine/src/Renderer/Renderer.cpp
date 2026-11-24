@@ -332,6 +332,7 @@ namespace Flux {
             frameBegun = true;
             prepareStart = Clock::now();
             timings.prepareSky = timings.prepareEntities = timings.prepareGround = timings.prepareTrees = timings.prepareUploads = 0.0;
+            timings.prepareUploadData = timings.prepareTileCommands = timings.prepareModelBatches = 0.0;
             ReadTimings();
             return true;
         }
@@ -498,6 +499,9 @@ namespace Flux {
             timings.prepareGround = parts.ground;
             timings.prepareTrees = parts.trees;
             timings.prepareUploads = parts.uploads;
+            timings.prepareUploadData = parts.uploadData;
+            timings.prepareTileCommands = parts.tileCommands;
+            timings.prepareModelBatches = parts.modelBatches;
             if (!meshes->HasClouds() || !temporal.continuous) {
                 clouds->ResetHistory(); // les passes des nuages sautées, ou la caméra a sauté
             }

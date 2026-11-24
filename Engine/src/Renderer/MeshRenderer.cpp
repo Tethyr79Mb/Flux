@@ -1237,12 +1237,17 @@ namespace Flux {
         if (!m_boundEnvironment[frameIndex]) {
             ClearDraws(); // pas de texture du ciel (mémoire épuisée) : rien plutôt qu'une lecture invalide
         }
+        const Clock::time_point uploadsStart = partStart;
         Upload(camera, aspect, sky, temporal, frameIndex);
+        m_prepareTimes.uploadData = since(partStart);
+        partStart = Clock::now();
         if (!BuildTileCommands(frameIndex)) {
             m_tileDraws.clear();
             m_tilePasses = {};
             m_grassBatches = {};
         }
+        m_prepareTimes.tileCommands = since(partStart);
+        partStart = Clock::now();
 
         // Transparents de l'arrière vers l'avant : chacun se mélange à ce qui est derrière lui. Trié par entité (le
         // centre de sa boîte) : deux transparents qui s'entrecroisent peuvent se superposer dans le mauvais ordre.
@@ -1280,7 +1285,8 @@ namespace Flux {
         if (!BuildModelBatches(frameIndex)) {
             m_modelPasses = {};
         }
-        m_prepareTimes.uploads = since(partStart);
+        m_prepareTimes.modelBatches = since(partStart);
+        m_prepareTimes.uploads = since(uploadsStart);
     }
 
     void MeshRenderer::BuildRayTracingModels(RHI::CommandList& commands, std::uint32_t frameIndex) {
@@ -1449,7 +1455,11 @@ namespace Flux {
             m_wavePlanet = wave.entity;
         }
         m_wavePlane.Follow(wave.camera, wave.sea);
-        if (!m_wavePlane.IsValid()) {
+        // Plus haut que la portée des normales, aucun point de la mer n'est assez près pour montrer une vague : le reflet
+        // élargi du lointain est le même sans elles (Mesh.slang). Pas de simulation (0,23 ms par image sur une
+        // RX 7700 XT, vue de l'espace) ; le plan suit toujours la caméra, prêt pour la descente.
+        if (!m_wavePlane.IsValid() || wave.height > WaveNormalRange) {
+            m_waveMargin = 0.0f;
             return;
         }
         m_wavePlanetIndex = wave.index;

@@ -157,6 +157,10 @@ namespace Flux {
             double ground = 0.0;   // planètes : parcours des tuiles, tuiles demandées
             double trees = 0.0;    // plaines d'arbres
             double uploads = 0.0;  // envois au GPU, lots, tri des transparents
+            // Parties de `uploads` : données de l'image (Upload), commandes des tuiles, lots des modèles (tri compris).
+            double uploadData = 0.0;
+            double tileCommands = 0.0;
+            double modelBatches = 0.0;
         };
         const PrepareTimes& GetPrepareTimes() const { return m_prepareTimes; }
         bool IsCascadeDrawn(std::uint32_t cascade) const { return m_drawCascade[cascade]; }
