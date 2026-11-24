@@ -121,6 +121,8 @@ namespace Flux::GameSettingsFile {
         Read(document, "bloom", settings.bloom, IsBool, warnings);
         Read(document, "sharpness", settings.sharpness, IsNumber, warnings);
         settings.sharpness = std::clamp(settings.sharpness, 0.0f, 1.0f);
+        Read(document, "fieldOfView", settings.fieldOfView, IsNumber, warnings);
+        settings.fieldOfView = std::clamp(settings.fieldOfView, MinFieldOfView, MaxFieldOfView);
         Read(document, "volume", settings.volume, IsNumber, warnings);
         settings.volume = std::clamp(settings.volume, 0.0f, 1.0f);
         Read(document, "engineStats", settings.showEngineStats, IsBool, warnings);
@@ -143,6 +145,7 @@ namespace Flux::GameSettingsFile {
         document["ambientOcclusion"] = AmbientOcclusionQualityKeys[static_cast<std::size_t>(settings.ambientOcclusion)];
         document["upscaling"] = UpscalingKeys[static_cast<std::size_t>(settings.upscaling)];
         document["sharpness"] = std::round(settings.sharpness * 100.0) / 100.0;
+        document["fieldOfView"] = std::round(settings.fieldOfView);
         document["bloom"] = settings.bloom;
         document["volume"] = std::round(settings.volume * 100.0) / 100.0; // 0.4 plutôt que 0.4000000059604645
         document["engineStats"] = settings.showEngineStats;

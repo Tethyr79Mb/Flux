@@ -60,6 +60,7 @@ namespace Flux {
                        .temporalAA = settings.temporalAA,
                        .upscaling = settings.upscaling,
                        .sharpness = settings.sharpness,
+                       .fieldOfView = settings.fieldOfView,
                        .groundDetail = settings.groundDetail,
                        .cloudQuality = settings.cloudQuality,
                        .vegetationDistance = settings.vegetationDistance,
@@ -115,6 +116,7 @@ namespace Flux {
         settings.temporalAA = engine.GetRenderer().IsTemporalAAEnabled();
         settings.upscaling = engine.GetRenderer().GetUpscaling();
         settings.sharpness = engine.GetRenderer().GetSharpness();
+        settings.fieldOfView = engine.GetFieldOfView();
         settings.groundDetail = engine.GetRenderer().GetGroundDetail();
         settings.cloudQuality = engine.GetRenderer().GetCloudQuality();
         settings.vegetationDistance = engine.GetRenderer().GetVegetationDistance();

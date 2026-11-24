@@ -73,6 +73,9 @@ namespace FluxEditor {
         if (const auto sharpness = json.find("sharpness"); sharpness != json.end() && sharpness->is_number()) {
             m_sharpness = std::clamp(sharpness->get<float>(), 0.0f, 1.0f);
         }
+        if (const auto fov = json.find("fieldOfView"); fov != json.end() && fov->is_number()) {
+            m_fieldOfView = std::clamp(fov->get<float>(), MinFieldOfView, MaxFieldOfView);
+        }
         if (const auto detail = json.find("groundDetail"); detail != json.end() && detail->is_string()) {
             const auto found = std::ranges::find(GroundDetailKeys, detail->get<std::string>());
             if (found != GroundDetailKeys.end()) {
@@ -117,6 +120,7 @@ namespace FluxEditor {
                         {"temporalAA", m_temporalAA},
                         {"upscaling", UpscalingKeys[static_cast<std::size_t>(m_upscaling)]},
                         {"sharpness", m_sharpness},
+                        {"fieldOfView", m_fieldOfView},
                         {"groundDetail", GroundDetailKeys[static_cast<std::size_t>(m_groundDetail)]},
                         {"cloudQuality", CloudQualityKeys[static_cast<std::size_t>(m_cloudQuality)]},
                         {"vegetationDistance", VegetationDistanceKeys[static_cast<std::size_t>(m_vegetationDistance)]},
@@ -135,6 +139,7 @@ namespace FluxEditor {
         renderer.SetTemporalAA(m_temporalAA);
         renderer.SetUpscaling(m_upscaling);
         renderer.SetSharpness(m_sharpness);
+        engine.SetFieldOfView(m_fieldOfView);
         renderer.SetGroundDetail(m_groundDetail);
         renderer.SetCloudQuality(m_cloudQuality);
         renderer.SetVegetationDistance(m_vegetationDistance);
@@ -273,6 +278,15 @@ namespace FluxEditor {
         }
         ui.HelpText("Avec la V-Sync, 2 images répondent une image plus tôt (16,7 ms à 60 Hz) tant que la carte graphique "
                     "suit l'écran ; 3 évitent un à-coup quand une image dépasse. Sans V-Sync, garder 3.");
+        if (ui.DragFloat("Champ de vision (°)", m_fieldOfView, 0.2f, MinFieldOfView, MaxFieldOfView, 0)) {
+            engine.SetFieldOfView(m_fieldOfView);
+            m_fieldOfViewChanged = true;
+        }
+        if (m_fieldOfViewChanged && !ui.IsItemActive()) {
+            m_fieldOfViewChanged = false;
+            Save();
+        }
+        ui.HelpText("Angle horizontal pour un écran 16:9 ; plus large en ultra-large. La caméra du jeu et celle de l'éditeur.");
         int upscaling = static_cast<int>(m_upscaling);
         if (ui.Choice("Mise à l'échelle", upscaling, UpscalingLabels)) {
             m_upscaling = static_cast<Upscaling>(upscaling);
@@ -367,6 +381,7 @@ namespace FluxEditor {
         if (ui.Button("Rétablir les graphismes par défaut", UI::Icon::Undo)) {
             m_upscaling = DefaultUpscaling;
             m_sharpness = DefaultSharpness;
+            m_fieldOfView = DefaultFieldOfView;
             m_temporalAA = true;
             m_groundDetail = DefaultGroundDetail;
             m_cloudQuality = DefaultCloudQuality;
