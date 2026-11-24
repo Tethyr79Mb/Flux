@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Flux/Graphics/Camera.hpp>
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/UI/Context.hpp>
 
