@@ -132,12 +132,15 @@ namespace Flux::Planetology {
             return;
         }
         PlanetState& state = m_planets[entity];
-        if (const ReliefShape shape = GetReliefShape(planet, craters, erosion); !state.terrain || planet.radius != state.radius
-            || planet.relief != state.relief || planet.seed != state.seed || shape != state.shape) {
+        const ReliefShape shape = GetReliefShape(planet, craters, erosion);
+        const bool changed = !state.terrain || planet.radius != state.radius || planet.relief != state.relief
+                          || planet.seed != state.seed || shape != state.shape;
+        if (changed || state.pending) {
             // Autre forme : toutes les tuiles sont à refaire. Sa carte d'érosion pas encore prête (calcul sur un fil à
-            // part) : l'ancienne forme reste affichée en attendant, ou rien.
-            std::shared_ptr<const Terrain> terrain = MakeTerrain(planet, craters, erosion, false);
-            if (terrain) {
+            // part) : la planète est affichée sans ses vallées en attendant, puis refaite avec.
+            bool pending = false;
+            std::shared_ptr<const Terrain> terrain = MakeTerrain(planet, craters, erosion, false, &pending);
+            if (changed || !pending) {
                 for (auto& [key, node] : state.nodes) {
                     Retire(node);
                 }
@@ -148,9 +151,7 @@ namespace Flux::Planetology {
                 state.relief = planet.relief;
                 state.seed = planet.seed;
                 state.shape = shape;
-            } else if (!state.terrain) {
-                state.lastUsed = m_frame;
-                return;
+                state.pending = pending;
             }
         }
         state.lastUsed = m_frame;

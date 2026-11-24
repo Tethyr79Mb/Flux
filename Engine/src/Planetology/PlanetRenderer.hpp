@@ -197,6 +197,7 @@ namespace Flux::Planetology {
             float relief = -1.0f;
             std::int32_t seed = 0;
             Planetology::ReliefShape shape;
+            bool pending = false; // carte d'érosion en calcul : terrain sans elle, à refaire quand elle est prête
             std::unordered_map<std::uint64_t, Node> nodes;
             std::vector<Request> requests;
             std::uint64_t lastUsed = 0;

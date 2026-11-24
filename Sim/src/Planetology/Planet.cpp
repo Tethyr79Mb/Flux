@@ -376,16 +376,14 @@ namespace Flux::Planetology {
     }
 
     std::shared_ptr<const Terrain> MakeTerrain(const PlanetComponent& planet, const CraterComponent* craters,
-                                               const ErosionComponent* erosion, bool wait) {
+                                               const ErosionComponent* erosion, bool wait, bool* pending) {
         const ReliefShape shape = GetReliefShape(planet, craters, erosion);
         auto terrain = std::make_shared<Terrain>(planet.radius, planet.relief, planet.seed, shape);
-        if (shape.eroded) {
-            std::shared_ptr<const ErosionMap> map = ErosionMap::Request(*terrain, shape.valleys, wait);
-            if (!map) {
-                return nullptr;
-            }
-            terrain->SetErosion(std::move(map));
+        std::shared_ptr<const ErosionMap> map = shape.eroded ? ErosionMap::Request(*terrain, shape.valleys, wait) : nullptr;
+        if (pending) {
+            *pending = shape.eroded && !map;
         }
+        terrain->SetErosion(std::move(map));
         return terrain;
     }
 

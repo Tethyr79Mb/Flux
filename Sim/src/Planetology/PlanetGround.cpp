@@ -335,19 +335,21 @@ namespace Flux::Planetology {
             PlanetState& state = m_planets[entity];
             const CraterComponent* craters = scene.GetRegistry().try_get<CraterComponent>(entity);
             const ErosionComponent* erosion = scene.GetRegistry().try_get<ErosionComponent>(entity);
-            if (const ReliefShape shape = GetReliefShape(planet, craters, erosion); !state.terrain || planet.radius != state.radius
-                || planet.relief != state.relief || planet.seed != state.seed || shape != state.shape) {
-                // Sa carte d'érosion pas encore prête : l'ancien sol reste en attendant, ou aucun.
-                if (std::shared_ptr<const Terrain> terrain = MakeTerrain(planet, craters, erosion, wait)) {
+            const ReliefShape shape = GetReliefShape(planet, craters, erosion);
+            const bool changed = !state.terrain || planet.radius != state.radius || planet.relief != state.relief
+                              || planet.seed != state.seed || shape != state.shape;
+            if (changed || state.pending) {
+                // Sa carte d'érosion pas encore prête (sans wait) : un sol sans vallées en attendant, refait avec.
+                bool pending = false;
+                std::shared_ptr<const Terrain> terrain = MakeTerrain(planet, craters, erosion, wait, &pending);
+                if (changed || !pending) {
                     RemoveTiles(system, state);
                     state.terrain = std::move(terrain);
                     state.radius = planet.radius;
                     state.relief = planet.relief;
                     state.seed = planet.seed;
                     state.shape = shape;
-                } else if (!state.terrain) {
-                    m_planets.erase(entity);
-                    continue;
+                    state.pending = pending;
                 }
             }
             const Math::Vector3d position = Math::Delta(anchor, scene.GetWorldPosition(entity));

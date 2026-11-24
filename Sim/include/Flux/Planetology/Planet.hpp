@@ -245,9 +245,10 @@ namespace Flux::Planetology {
     };
 
     // Terrain d'une planète, avec ses cratères et son érosion. La carte d'érosion se relit ou se calcule sur un fil à
-    // part (ErosionMap::Request) : nullptr tant qu'elle n'est pas prête, sauf avec wait. Sans érosion : tout de suite.
+    // part (ErosionMap::Request) : tant qu'elle n'est pas prête (sauf avec wait), le terrain est rendu sans elle et
+    // *pending vaut vrai, à redemander plus tard.
     FLUX_SIM_API std::shared_ptr<const Terrain> MakeTerrain(const PlanetComponent& planet, const CraterComponent* craters,
-                                                            const ErosionComponent* erosion, bool wait);
+                                                            const ErosionComponent* erosion, bool wait, bool* pending = nullptr);
 
     // Distance (de la caméra à la sphère englobante d'une tuile) en deçà de laquelle une tuile de ce niveau est coupée
     // en 4. La même pour toutes les tuiles d'un niveau (la projection tangente donne le même angle à toutes les

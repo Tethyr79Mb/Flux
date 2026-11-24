@@ -42,20 +42,21 @@ namespace Flux {
             return relief.terrain->GetRadius() == nearest->radius && relief.terrain->GetRelief() == nearest->relief
                 && relief.seed == nearest->seed && relief.shape == shape;
         };
-        auto found = std::ranges::find_if(m_reliefs, same);
-        if (found == m_reliefs.end()) {
-            // Planète réglée autrement (éditeur) ou trop de planètes à la fois : la plus ancienne laisse sa place.
-            if (m_reliefs.size() >= MaxReliefs) {
-                m_reliefs.erase(m_reliefs.begin());
+        std::shared_ptr<const Planetology::Terrain> terrain;
+        if (const auto found = std::ranges::find_if(m_reliefs, same); found != m_reliefs.end()) {
+            terrain = found->terrain;
+        } else {
+            // Carte d'érosion en calcul : altitude au-dessus du relief sans vallées, gardé seulement une fois complet.
+            bool pending = false;
+            terrain = Planetology::MakeTerrain(*nearest, craters, erosion, false, &pending);
+            if (!pending) {
+                // Planète réglée autrement (éditeur) ou trop de planètes à la fois : la plus ancienne laisse sa place.
+                if (m_reliefs.size() >= MaxReliefs) {
+                    m_reliefs.erase(m_reliefs.begin());
+                }
+                m_reliefs.push_back({terrain, nearest->seed, shape});
             }
-            std::shared_ptr<const Planetology::Terrain> terrain = Planetology::MakeTerrain(*nearest, craters, erosion, false);
-            if (!terrain) {
-                return flight; // carte d'érosion en calcul : l'altitude viendra quand elle sera prête
-            }
-            m_reliefs.push_back({std::move(terrain), nearest->seed, shape});
-            found = m_reliefs.end() - 1;
         }
-        const Planetology::Terrain* terrain = found->terrain.get();
         flight.nearPlanet = true;
         flight.up = Math::Normalize(offset);
         flight.center = Math::Length(offset);

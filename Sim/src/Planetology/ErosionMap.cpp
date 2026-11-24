@@ -6,10 +6,12 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <functional>
 #include <fstream>
 #include <future>
 #include <limits>
@@ -23,7 +25,7 @@
 namespace Flux::Planetology {
     namespace {
         // Change dès que le calcul change : les cartes en cache d'avant sont alors refaites.
-        constexpr std::uint32_t MethodVersion = 2;
+        constexpr std::uint32_t MethodVersion = 3;
         constexpr std::uint32_t FileMagic = 0x52455846u; // « FXER »
         constexpr double QuarterPi = std::numbers::pi / 4.0;
         // Arrondi des hauteurs de départ (m) : efface l'écart d'exp, pow ou sin d'une bibliothèque à l'autre.
@@ -33,7 +35,9 @@ namespace Flux::Planetology {
         // Creusement par itération d'un cours d'eau : facteur de la racine de son débit (réglage strength = 1).
         constexpr double BaseErosion = 0.005;
         // Passes de creusement entre deux calculs des chemins de l'eau.
-        constexpr std::uint32_t RouteEvery = 4;
+        constexpr std::uint32_t RouteEvery = 8;
+        // Points au moins par lot de bassins versants partagé entre les fils.
+        constexpr std::uint32_t BasinBatch = 16384;
 
         constexpr int OffsetI[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
         constexpr int OffsetJ[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
@@ -73,6 +77,32 @@ namespace Flux::Planetology {
                 pool.emplace_back([&work, begin, end] { work(begin, end); });
             }
             work(0u, std::min(count, slice));
+        }
+
+        // Bassins versants (segments [début, fin) de l'ordre aval -> amont, un par sortie) partagés entre des fils,
+        // les plus gros d'abord : un bassin ne dépend que de lui-même, le résultat ne dépend pas du partage.
+        template <typename Work>
+        void ParallelBasins(std::span<const std::pair<std::uint32_t, std::uint32_t>> basins, std::uint32_t size, unsigned threads,
+                            const Work& work) {
+            threads = std::max(1u, std::min(threads, size / 4096u + 1u));
+            if (threads == 1) {
+                for (const auto& [begin, end] : basins) {
+                    work(begin, end);
+                }
+                return;
+            }
+            std::atomic<std::size_t> nextBasin = 0;
+            const auto run = [&] {
+                for (std::size_t k = nextBasin++; k < basins.size(); k = nextBasin++) {
+                    work(basins[k].first, basins[k].second);
+                }
+            };
+            std::vector<std::jthread> pool;
+            pool.reserve(threads - 1);
+            for (unsigned k = 1; k < threads; ++k) {
+                pool.emplace_back(run);
+            }
+            run();
         }
 
         struct Hash
@@ -237,6 +267,12 @@ namespace Flux::Planetology {
             std::memcpy(neighbors, &m_borderNeighbors[8ull * BorderSlot(face, i, j)], sizeof(neighbors));
             return;
         }
+        if (i >= 2 && j >= 2 && i <= n - 2 && j <= n - 2) { // loin du bord : aucun voisin sur une arête
+            for (int d = 0; d < 8; ++d) {
+                neighbors[d] = static_cast<std::uint32_t>(static_cast<std::int64_t>(node) + OffsetJ[d] * static_cast<std::int64_t>(m) + OffsetI[d]);
+            }
+            return;
+        }
         for (int d = 0; d < 8; ++d) {
             const auto ni = static_cast<std::uint32_t>(static_cast<std::int32_t>(i) + OffsetI[d]);
             const auto nj = static_cast<std::uint32_t>(static_cast<std::int32_t>(j) + OffsetJ[d]);
@@ -261,13 +297,26 @@ namespace Flux::Planetology {
         const std::uint32_t level = GetLevel(terrain, settings);
         map.SetLevel(level);
         const std::uint32_t n = map.m_resolution;
+        const std::uint32_t m = n + 1;
         const std::uint32_t count = 6 * map.GetSide() * map.GetSide();
         threads = threads == 0 ? std::max(1u, std::thread::hardware_concurrency()) : threads;
         // Les copies d'un point d'arête ne comptent pas : seul son représentant est calculé, puis recopié.
+        // 2 : loin des bords de la face, ses voisins sont node + Offset (sans division pour retrouver i et j).
         std::vector<std::uint8_t> active(count);
         for (std::uint32_t node = 0; node < count; ++node) {
-            active[node] = map.GetCanonical(node) == node ? 1 : 0;
+            const std::uint32_t i = node % m;
+            const std::uint32_t j = (node / m) % m;
+            active[node] = map.GetCanonical(node) != node ? 0 : (i >= 2 && j >= 2 && i <= n - 2 && j <= n - 2 ? 2 : 1);
         }
+        const auto neighborsOf = [&](std::uint32_t node, std::uint32_t (&neighbors)[8]) {
+            if (active[node] == 2) {
+                for (int d = 0; d < 8; ++d) {
+                    neighbors[d] = node + static_cast<std::uint32_t>(OffsetJ[d] * static_cast<std::int32_t>(m) + OffsetI[d]);
+                }
+            } else {
+                map.GetNeighbors(node, neighbors);
+            }
+        };
 
         // Hauteurs de départ : la formule sans les octaves plus fines que deux mailles (Terrain::GetOctaves du niveau
         // de tuile dont les sommets sont les points), arrondies.
@@ -311,8 +360,7 @@ namespace Flux::Planetology {
         map.m_depth = deepest;
 
         std::vector<double> height(start.begin(), start.end());
-        std::vector<double> slumped(count);
-        std::vector<double> filled(count);
+        std::vector<double> filled(count); // surface de l'eau, puis hauteurs éboulées (étape 6) : plus lue d'ici là
         std::vector<std::uint32_t> receiver(count);
         std::vector<float> distance(count);
         std::vector<float> flow(count);
@@ -320,11 +368,10 @@ namespace Flux::Planetology {
         std::vector<std::uint32_t> donors(count);
         std::vector<std::uint32_t> stack(count);
         std::vector<std::uint8_t> visited(count);
-        std::vector<std::uint32_t> next(count);
-        std::vector<std::uint32_t> bucketHead;
-        std::vector<std::uint32_t> bucketTail;
+        std::vector<std::vector<std::uint32_t>> buckets;
         std::vector<std::uint32_t> pit;
         std::uint32_t size = 0; // points rangés dans stack (les représentants)
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> basins; // dans stack
 
         const std::uint32_t passes = std::max(settings.iterations, 1u);
         for (std::uint32_t pass = 0; pass < passes; ++pass) {
@@ -342,19 +389,13 @@ namespace Flux::Planetology {
                     low = std::min(low, h);
                     high = std::max(high, h);
                 }
+                // Un panier est un tableau lu dans l'ordre (pas une liste chaînée : chaque maille sortie y attendait
+                // la mémoire de la précédente).
                 const std::size_t bucketCount = static_cast<std::size_t>((high - low) / HeightStep) + 2;
-                bucketHead.assign(bucketCount, NoNode);
-                bucketTail.assign(bucketCount, NoNode);
+                if (buckets.size() < bucketCount) {
+                    buckets.resize(bucketCount);
+                }
                 const auto bucketOf = [&](double h) { return static_cast<std::size_t>((h - low) / HeightStep); };
-                const auto push = [&](std::size_t bucket, std::uint32_t node) {
-                    next[node] = NoNode;
-                    if (bucketTail[bucket] == NoNode) {
-                        bucketHead[bucket] = node;
-                    } else {
-                        next[bucketTail[bucket]] = node;
-                    }
-                    bucketTail[bucket] = node;
-                };
                 for (std::uint32_t node = 0; node < count; ++node) {
                     visited[node] = active[node] ? 0 : 1;
                 }
@@ -364,10 +405,11 @@ namespace Flux::Planetology {
                         visited[node] = 1;
                         filled[node] = height[node];
                         receiver[node] = node;
-                        push(bucketOf(height[node]), node);
+                        buckets[bucketOf(height[node])].push_back(node);
                     }
                 }
                 std::size_t bucket = 0;
+                std::size_t bucketRead = 0;
                 std::size_t pitHead = 0;
                 while (true) {
                     std::uint32_t node;
@@ -376,20 +418,18 @@ namespace Flux::Planetology {
                     } else {
                         pit.clear();
                         pitHead = 0;
-                        while (bucket < bucketCount && bucketHead[bucket] == NoNode) {
+                        while (bucket < bucketCount && bucketRead == buckets[bucket].size()) {
+                            buckets[bucket].clear();
                             ++bucket;
+                            bucketRead = 0;
                         }
                         if (bucket == bucketCount) {
                             break;
                         }
-                        node = bucketHead[bucket];
-                        bucketHead[bucket] = next[node];
-                        if (bucketHead[bucket] == NoNode) {
-                            bucketTail[bucket] = NoNode;
-                        }
+                        node = buckets[bucket][bucketRead++];
                     }
                     std::uint32_t neighbors[8];
-                    map.GetNeighbors(node, neighbors);
+                    neighborsOf(node, neighbors);
                     for (const std::uint32_t other : neighbors) {
                         if (other == NoNode || visited[other]) {
                             continue;
@@ -402,7 +442,7 @@ namespace Flux::Planetology {
                             pit.push_back(other);
                         } else {
                             filled[other] = height[other];
-                            push(std::max(bucketOf(height[other]), bucket), other);
+                            buckets[std::max(bucketOf(height[other]), bucket)].push_back(other);
                         }
                     }
                 }
@@ -417,7 +457,7 @@ namespace Flux::Planetology {
                             continue;
                         }
                         std::uint32_t neighbors[8];
-                        map.GetNeighbors(node, neighbors);
+                        neighborsOf(node, neighbors);
                         std::uint32_t best = receiver[node];
                         double bestSlope = -1.0;
                         for (int d = 0; d < 8; ++d) {
@@ -455,45 +495,63 @@ namespace Flux::Planetology {
                         }
                     }
                 }
+                // Un bassin après l'autre (d'une sortie vers tout son amont), chacun d'un seul tenant dans stack. Les
+                // petits (une maille de mer) sont groupés en lots de BasinBatch points au moins : moins de partage.
                 size = 0;
-                for (std::uint32_t node = 0; node < count; ++node) {
-                    if (active[node] && receiver[node] == node) {
-                        stack[size++] = node;
+                basins.clear();
+                std::uint32_t batch = 0;
+                for (std::uint32_t outlet = 0; outlet < count; ++outlet) {
+                    if (!active[outlet] || receiver[outlet] != outlet) {
+                        continue;
+                    }
+                    const std::uint32_t begin = size;
+                    stack[size++] = outlet;
+                    for (std::uint32_t k = begin; k < size; ++k) {
+                        const std::uint32_t node = stack[k];
+                        for (std::uint32_t d = donorStart[node]; d < donorStart[node + 1]; ++d) {
+                            stack[size++] = donors[d];
+                        }
+                    }
+                    if (size - batch >= BasinBatch) {
+                        basins.emplace_back(batch, size);
+                        batch = size;
                     }
                 }
-                for (std::uint32_t k = 0; k < size; ++k) {
-                    const std::uint32_t node = stack[k];
-                    for (std::uint32_t d = donorStart[node]; d < donorStart[node + 1]; ++d) {
-                        stack[size++] = donors[d];
-                    }
+                if (batch < size) {
+                    basins.emplace_back(batch, size);
                 }
+                std::ranges::stable_sort(basins, std::greater{}, [](const auto& basin) { return basin.second - basin.first; });
 
                 // 4. Débit : chaque maille reçoit la pluie de tout son amont.
                 std::fill(flow.begin(), flow.end(), static_cast<float>(rain));
-                for (std::uint32_t k = size; k-- > 0;) {
-                    const std::uint32_t node = stack[k];
-                    if (receiver[node] != node) {
-                        flow[receiver[node]] += flow[node];
+                ParallelBasins(basins, size, threads, [&](std::uint32_t begin, std::uint32_t end) {
+                    for (std::uint32_t k = end; k-- > begin;) {
+                        const std::uint32_t node = stack[k];
+                        if (receiver[node] != node) {
+                            flow[receiver[node]] += flow[node];
+                        }
                     }
-                }
+                });
             }
 
             // 5. Creusement implicite (loi de puissance du courant, m = 1/2, n = 1), de l'aval vers l'amont : la maille
             // rejoint son receveur d'autant plus vite que son débit est fort. Sous channelArea mailles drainées, rien
             // (les crêtes et les sommets restent tels que la formule les fait). Dans un lac (plus bas que la sortie),
             // rien non plus.
-            for (std::uint32_t k = 0; k < size; ++k) {
-                const std::uint32_t node = stack[k];
-                const std::uint32_t down = receiver[node];
-                if (down == node || height[node] <= height[down]) {
-                    continue;
+            ParallelBasins(basins, size, threads, [&](std::uint32_t begin, std::uint32_t end) {
+                for (std::uint32_t k = begin; k < end; ++k) {
+                    const std::uint32_t node = stack[k];
+                    const std::uint32_t down = receiver[node];
+                    if (down == node || height[node] <= height[down]) {
+                        continue;
+                    }
+                    const double power = std::max(std::sqrt(static_cast<double>(flow[node])) - channel, 0.0);
+                    const double f = erosion * power * cellSize / static_cast<double>(distance[node]);
+                    const double carved = (height[node] + f * height[down]) / (1.0 + f);
+                    const double first = start[node];
+                    height[node] = std::max({carved, first - deepest, std::min(first, sea)});
                 }
-                const double power = std::max(std::sqrt(static_cast<double>(flow[node])) - channel, 0.0);
-                const double f = erosion * power * cellSize / static_cast<double>(distance[node]);
-                const double carved = (height[node] + f * height[down]) / (1.0 + f);
-                const double first = start[node];
-                height[node] = std::max({carved, first - deepest, std::min(first, sea)});
-            }
+            });
 
             // 6. Versants : un lit creusé tout seul serait une tranchée d'une maille. Une maille plus raide que
             // valleySlope au-dessus d'un voisin s'éboule jusqu'à cette pente, seulement si c'est le creusement qui l'a
@@ -502,11 +560,11 @@ namespace Flux::Planetology {
                 for (std::uint32_t node = begin; node < end; ++node) {
                     double h = height[node];
                     if (fixed[node] || !active[node]) {
-                        slumped[node] = h;
+                        filled[node] = h;
                         continue;
                     }
                     std::uint32_t neighbors[8];
-                    map.GetNeighbors(node, neighbors);
+                    neighborsOf(node, neighbors);
                     for (int d = 0; d < 8; ++d) {
                         const std::uint32_t other = neighbors[d];
                         if (other == NoNode) {
@@ -518,10 +576,10 @@ namespace Flux::Planetology {
                         }
                     }
                     const double first = start[node];
-                    slumped[node] = std::max({h, first - deepest, std::min(first, sea)});
+                    filled[node] = std::max({h, first - deepest, std::min(first, sea)});
                 }
             });
-            height.swap(slumped);
+            height.swap(filled);
         }
 
         map.m_carve.resize(count);
@@ -535,7 +593,7 @@ namespace Flux::Planetology {
             std::uint8_t direction = Outlet;
             if (receiver[node] != node) {
                 std::uint32_t neighbors[8];
-                map.GetNeighbors(node, neighbors);
+                neighborsOf(node, neighbors);
                 direction = static_cast<std::uint8_t>(std::find(neighbors, neighbors + 8, receiver[node]) - neighbors);
             }
             map.m_direction[node] = direction;

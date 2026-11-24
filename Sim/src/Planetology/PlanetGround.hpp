@@ -93,6 +93,7 @@ namespace Flux::Planetology {
             float relief = -1.0f;
             std::int32_t seed = 0;
             Planetology::ReliefShape shape;
+            bool pending = false; // carte d'érosion en calcul : sol sans elle, à refaire quand elle est prête
             float gravity = 0.0f;
             float atmosphere = 0.0f;
             float atmosphereHeight = 0.0f;
