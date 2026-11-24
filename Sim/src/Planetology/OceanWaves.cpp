@@ -146,4 +146,44 @@ namespace Flux::Planetology {
         }
         return static_cast<float>(std::sqrt(variance));
     }
+
+    void OceanWavePlane::Follow(const Math::Vector3d& camera, double seaRadius) {
+        const double length = Math::Length(camera);
+        if (length <= 0.0 || seaRadius <= 0.0) {
+            return;
+        }
+        const Math::Vector3d up = camera / length;
+        const Math::Vector3d anchor = up * seaRadius;
+        if (!m_valid || seaRadius != m_radius || Math::Length(anchor - GetAnchor()) > ResetDistance) {
+            // Axe x vers l'est (autour de l'axe y de la planète), sauf trop près d'un pôle.
+            const Math::Vector3d pole = std::abs(up.y) < 0.99 ? Math::Vector3d{0.0, 1.0, 0.0} : Math::Vector3d{1.0, 0.0, 0.0};
+            m_east = Math::Normalize(Math::Cross(pole, up));
+            m_north = Math::Cross(up, m_east);
+            m_up = up;
+            m_radius = seaRadius;
+            m_offset = {0.0, 0.0};
+            m_valid = true;
+            return;
+        }
+        // Le pas de l'ancrage, mesuré dans le plan d'avant (il est petit devant le rayon).
+        const Math::Vector3d step = anchor - GetAnchor();
+        m_offset[0] += Math::Dot(step, m_east);
+        m_offset[1] += Math::Dot(step, m_north);
+        // Transport : la plus petite rotation qui mène l'ancienne verticale à la nouvelle (Rodrigues, sans angle),
+        // appliquée à l'axe x ; il est ensuite remis dans le plan (les erreurs ne s'accumulent pas).
+        const Math::Vector3d axis = Math::Cross(m_up, up);
+        const double cosine = Math::Dot(m_up, up);
+        if (cosine > -0.5) {
+            const Math::Vector3d turned = Math::Cross(axis, m_east);
+            m_east = m_east + turned + Math::Cross(axis, turned) / (1.0 + cosine);
+        }
+        m_east = Math::Normalize(m_east - up * Math::Dot(m_east, up));
+        m_north = Math::Cross(up, m_east);
+        m_up = up;
+    }
+
+    std::array<double, 2> OceanWavePlane::GetCoordinates(const Math::Vector3d& point) const {
+        const Math::Vector3d delta = point - GetAnchor();
+        return {m_offset[0] + Math::Dot(delta, m_east), m_offset[1] + Math::Dot(delta, m_north)};
+    }
 }
