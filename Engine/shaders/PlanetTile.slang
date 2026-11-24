@@ -972,7 +972,7 @@ struct SowVegetation
     Biome biomes[MaxBiomes];
     uint4 biomeSpecies[MaxBiomes]; // espèces de chaque biome, 4 au plus : première variante (dans species) | nombre << 8
     float4 biomeShares[MaxBiomes]; // leurs parts cumulées (la dernière à 1)
-    float4 species[MaxSpecies];    // x, y : tailles extrêmes (x le modèle) ; z : cosinus de la pente maximale
+    float4 species[MaxSpecies];    // x, y : tailles extrêmes (x le modèle) ; z : cosinus de la pente maximale ; w : 1 pour une plante (TreeSpecies::plant)
     uint4 counts;                  // x : biomes ; y : côtés de blocs employés (bit k) ; z : taille des bosquets des biomes (float, m)
     uint4 blocks[MaxBiomes / 4];   // côté des blocs de chaque espèce de chaque biome, 4 bits chacune (TreeBlocks)
     uint4 understorySpecies[MaxBiomes]; // comme biomeSpecies, pour le sous-bois
@@ -980,9 +980,9 @@ struct SowVegetation
 };
 
 [[vk::binding(2, 0)]] StructuredBuffer<TreeJob> treeJobs;
-// Deux float4 par arbre : position relative au point de référence de la tuile, taille ; direction du haut (repère de la
-// planète), (espèce + 16 pour le sous-bois) x 8 + angle autour du haut (radians, moins de 8). Les arbres d'une plaine
-// puis son sous-bois, TreeGrid² places chacun (TreesPerPlain).
+// Deux float4 par arbre : position relative au point de référence de la tuile, taille ; normale du sol sous lui (repère
+// de la planète ; le haut, radial, se déduit de la position), (espèce + 16 pour le sous-bois) x 8 + angle autour du haut
+// (radians, moins de 8). Les arbres d'une plaine puis son sous-bois, TreeGrid² places chacun (TreesPerPlain).
 [[vk::binding(3, 0)]] RWStructuredBuffer<float4> trees;
 [[vk::binding(4, 0)]] RWStructuredBuffer<uint> treeCounts; // un par case
 [[vk::binding(5, 0)]] StructuredBuffer<SowVegetation> sowVegetation;
@@ -1196,13 +1196,18 @@ bool Plant(SowSite site, uint firstVariant, uint variants, float scaleFactor, in
     const float3 dv = Local(TreeDelta(site.u, site.v + e), Height(TreeDelta(site.u, site.v + e), octaves) + CarveAt(site.u, site.v + e))
                     - site.position;
     const float3 up = normalize(site.local);
+    const float3 normal = normalize(cross(du, dv));
+    const float cosine = dot(normal, up);
     // <= et borné à 1 : une pente maximale nulle n'en laisse aucun, même là où le float arrondit le sol à plat.
-    if (min(abs(dot(normalize(cross(du, dv)), up)), 1.0) <= traits.z) {
+    if (min(abs(cosine), 1.0) <= traits.z) {
         return false;
     }
-    const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * scaleFactor;
+    // Une plante du sous-bois garde sa taille : la réduction du sous-bois fait des jeunes arbres.
+    const float factor = layer == 1 && traits.w > 0.5 ? 1.0 : scaleFactor;
+    const float scale = lerp(traits.x, traits.y, TreeRandom(state)) * factor;
     first = float4(site.position, scale);
-    second = float4(up, float(species + 16 * layer) * 8.0 + TreeRandom(state) * 6.2831853);
+    // Normale du sol, tournée vers le haut : le bas du modèle (racines) y est plaqué (TreePosition, Mesh.slang).
+    second = float4(cosine < 0.0 ? -normal : normal, float(species + 16 * layer) * 8.0 + TreeRandom(state) * 6.2831853);
     return true;
 }
 

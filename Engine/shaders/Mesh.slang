@@ -426,10 +426,26 @@ float3 TreeRotate(float4 q, float3 v)
     return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
 }
 
+// Normale du sol sous l'arbre dans son repère (x et z ; y vers le haut), rangée par computeCull (PackTree,
+// Vegetation.slang) dans le w de sa rotation.
+float2 TreeGround(float packed)
+{
+    const uint bits = asuint(packed);
+    return (float2(float((bits >> 7) & 127u), float(bits & 127u)) / 127.0 - 0.5) * 1.5;
+}
+
+// Hauteur (m, à la taille du modèle) sous laquelle le modèle suit la pente du sol : racines et pied du tronc.
+static const float TreeGroundBlend = 1.5;
+
 float3 TreePosition(float4 placement, float3 position, out float4 rotation, uint instance)
 {
-    // Rotation rangée sans w (positif, voir computeScatter) : w porte la teinte de l'arbre (TreeTint).
+    // Rotation rangée sans w (positif, voir computeScatter) : w porte la teinte et la pente du sol (PackTree).
     rotation = treeInstances[instance * 2 + 1];
+    // Les arbres restent droits ; le bas du modèle descend ou monte jusqu'au plan du sol (sans quoi, sur une pente,
+    // les racines flottent côté aval). Le décalage s'efface en montant le tronc.
+    const float2 ground = TreeGround(rotation.w);
+    const float groundY = sqrt(max(1.0 - dot(ground, ground), 0.25));
+    position.y -= dot(ground, position.xz) / groundY * (1.0 - smoothstep(0.0, TreeGroundBlend, position.y));
     rotation.w = sqrt(saturate(1.0 - dot(rotation.xyz, rotation.xyz)));
     // Phase propre à chaque arbre (sa taille est tirée au hasard) : la forêt ne bat pas en mesure.
     const float phase = frac(placement.w * 97.31) * 6.2831853;
@@ -453,7 +469,7 @@ struct TreeVertexOutput
 // côté, plus sombre et plus bleu de l'autre.
 float3 TreeTint(uint instance)
 {
-    const float v = treeInstances[instance * 2 + 1].w;
+    const float v = float((asuint(treeInstances[instance * 2 + 1].w) >> 14) & 31u) / 31.0 - 0.5;
     return float3(1.0 + 0.9 * v, 1.0 + 0.6 * v, 1.0 - 0.1 * v);
 }
 

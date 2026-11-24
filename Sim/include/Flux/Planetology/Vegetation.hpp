@@ -28,6 +28,12 @@ namespace Flux::Planetology {
         // la case la plus proche (environ 6 m, Planetology/TreeSowing).
         float spacing = 12.0f;
         Math::LinearColor canopyColor{0.02f, 0.045f, 0.012f, 1.0f}; // cimes vues de loin
+        // Litière au pied (relatif au dossier des assets, vide : aucune) : modèle d'un carré à plat dont le moteur prend
+        // la texture (répétée tous les 1,5 m) et le rayon (x la taille de l'arbre), projetée sur le sol en décalque.
+        std::string litter;
+        // Plante du sous-bois (fougère, buisson) : garde sa taille (pas VegetationBiome::understoryScale, fait pour
+        // réduire un arbre en jeune arbre) et n'a pas d'imposteur (rien au-delà de VegetationComponent::farDistance).
+        bool plant = false;
     };
 
     // Un biome (fichier .biome.json) : où il pousse et quelles espèces.

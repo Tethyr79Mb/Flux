@@ -104,6 +104,9 @@ namespace Flux::Planetology {
             const GpuModel* middle = nullptr;
             const GpuModel* far = nullptr;
             std::uint32_t impostor = 0;
+            // Litière au pied (TreeSpecies::litter) : un carré à plat dont le moteur ne prend que l'image et le rayon
+            // (LitterRenderer) ; nullptr : aucune.
+            const GpuModel* litter = nullptr;
         };
         // Pyramide de profondeur de l'image précédente (OcclusionCulling::GetSourcePyramid, buffer non nul) où tester
         // les arbres en vue de cette image, entre BeginFrame et EndFrame ; sans appel, aucun n'est caché.
@@ -131,6 +134,18 @@ namespace Flux::Planetology {
         };
         static constexpr std::uint32_t ImpostorIndices = 6;
         std::span<const Draw> GetDraws(List list) const { return m_lists[list]; }
+        // Litière d'une espèce sous ses arbres de la liste Near : sa commande dans GetCommands (les LitterIndices
+        // indices d'une boîte par arbre), son matériau (table des matériaux) et son rayon (m, à la taille du modèle).
+        struct LitterDraw
+        {
+            std::uint32_t command;
+            std::uint32_t material;
+            float radius;
+        };
+        static constexpr std::uint32_t LitterIndices = 36;
+        std::span<const LitterDraw> GetLitter() const { return m_litter; }
+        // Fin de la liste Near (m) : la litière s'efface avant.
+        float GetLodDistance() const { return m_lodDistance; }
         const RHI::Buffer& GetCommands(std::uint32_t frameIndex) const { return *m_frames[frameIndex].commands; }
         const RHI::Buffer& GetInstances(std::uint32_t frameIndex) const { return *m_frames[frameIndex].instances; }
 
@@ -160,7 +175,7 @@ namespace Flux::Planetology {
         {
             Math::Vector3f position; // relative au point de référence de la tuile de sa plaine
             float scale;
-            Math::Vector3f up;       // repère de la planète
+            Math::Vector3f ground;   // normale du sol sous lui, repère de la planète (le haut se déduit de la position)
             // (espèce (VegetationSet::species) + 16 pour le sous-bois) x 8 + angle autour du haut (radians)
             float speciesAngle;
         };
@@ -194,7 +209,7 @@ namespace Flux::Planetology {
         struct CullCell
         {
             std::array<float, 4> origin;
-            std::array<float, 4> appear;
+            std::array<float, 4> appear; // x : apparition ; yzw : point de référence, repère de la planète
         };
         // Doit correspondre à CullFrame dans shaders/Vegetation.slang.
         struct CullFrame
@@ -244,6 +259,9 @@ namespace Flux::Planetology {
             std::uint32_t slot;
             std::uint64_t lastUsed;
             std::chrono::steady_clock::time_point sown;
+            // Point de référence de la plaine, repère de la planète (centre à l'origine) : le haut de chaque arbre, radial,
+            // en vient (computeCull), la place du semis gardant la normale du sol.
+            std::array<float, 3> local;
         };
         struct FreeSlot
         {
@@ -275,6 +293,7 @@ namespace Flux::Planetology {
         TreeJob m_job{};
         SowVegetation m_sowVegetation{};
         std::array<float, MaxSpecies> m_tints{}; // TreeSpecies::tint de chaque espèce
+        std::uint32_t m_plants = 0;              // TreeSpecies::plant : bit de chaque espèce
         std::array<float, 10> m_signature{};
         Math::Quaternionf m_rotation;
         float m_lodDistance = 0.0f, m_farDistance = 0.0f, m_range = 0.0f;
@@ -293,6 +312,7 @@ namespace Flux::Planetology {
         std::uint32_t m_slotCount = 0;
         std::uint64_t m_frame = 0;
         std::array<std::vector<Draw>, ListCount> m_lists;
+        std::vector<LitterDraw> m_litter;
         std::vector<RHI::DrawIndexedCommand> m_commands;
         std::vector<CullCell> m_cells;
         std::vector<TreeJob> m_jobs;

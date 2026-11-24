@@ -32,7 +32,7 @@ namespace {
     // Une espèce de tailles [minScale, maxScale].
     // Espacement d'1 m : chaque place de la grille peut avoir son arbre.
     VegetationSet::Species Species(float minScale, float maxScale, float maxSlope, float spacing = 1.0f) {
-        return {{"a.glb", "a.glb", "a.glb"}, minScale, maxScale, maxSlope, 0.0f, 0.3f, 10.0f, spacing};
+        return {{"a.glb", "a.glb", "a.glb"}, minScale, maxScale, maxSlope, 0.0f, 0.3f, 10.0f, spacing, {}, false};
     }
 
     // Un biome partout (zones, climat et altitude sans limite), de couverture et densité données ; ses espèces (une
@@ -100,7 +100,7 @@ namespace {
         return true;
     }
 
-    // Le semis du CPU (SowPlain) retrouve les arbres du GPU : mêmes places (à 5 cm), espèces et tailles. Seuls
+    // Le semis du CPU (SowPlain) retrouve les arbres du GPU : mêmes places (à 5 cm), espèces, tailles et normales du sol. Seuls
     // quelques-uns au ras d'un seuil (plage, neige, pente, bord d'une forêt, d'un biome ou d'un bosquet) peuvent
     // manquer d'un côté, ou changer d'espèce ou de biome (taille) à la même place, le relief et la position du GPU
     // étant en float : 0,5 % au plus, comptés ensemble.
@@ -125,8 +125,9 @@ namespace {
                     const auto index = static_cast<std::size_t>(it - sorted.begin());
                     if (!used[index] && Math::Length(Math::Vector3d(it->position) - local) < 0.05) {
                         used[index] = true;
+                        // Normale du sol : celle du test de pente des deux côtés (relief en float sur le GPU).
                         if (SpeciesOf(*it) == tree.species && IsUnderstory(*it) == tree.understory
-                            && std::abs(it->scale - tree.scale) <= 1.0e-3f) {
+                            && std::abs(it->scale - tree.scale) <= 1.0e-3f && Math::Dot(it->ground, tree.ground) > 0.999f) {
                             ++matched;
                         } else {
                             std::printf("  %s : arbre d'espèce %u, taille %.4f sur le GPU ; %u, %.4f sur le CPU\n", name,
@@ -304,7 +305,9 @@ bool RunVegetationGpuTests() {
             const Math::Vector3d direction = Math::Normalize(local);
             const double error = std::abs(Math::Length(local) - terrain.GetRadius() - terrain.GetHeight(direction, octaves));
             worst = std::max(worst, error);
-            CHECK(Math::Dot(Math::Vector3d(tree.up), direction) > 0.99999);
+            // Normale du sol : unitaire, et au plus de la pente permise loin du haut (radial).
+            CHECK(std::abs(Math::Length(tree.ground) - 1.0f) < 1.0e-4f);
+            CHECK(Math::Dot(Math::Vector3d(tree.ground), direction) > std::cos(everywhere.species[0].maxSlope * std::numbers::pi / 180.0) - 1.0e-4);
             CHECK(tree.scale >= 0.7f && tree.scale <= 1.3f);
             CHECK(SpeciesOf(tree) == 0 && tree.speciesAngle >= 0.0f && tree.speciesAngle < 6.3f);
         }

@@ -61,6 +61,9 @@ namespace Flux::Planetology {
         float scale = 1.0f;        // x le modèle
         std::uint32_t species = 0; // dans VegetationSet::species
         bool understory = false;   // du sous-bois (VegetationBiome::understory)
+        // Normale du sol sous lui (repère de la planète), celle de son test de pente : le moteur y plaque le bas du
+        // modèle (racines). Pas utilisée par la collision.
+        Math::Vector3f ground{0.0f, 1.0f, 0.0f};
     };
 
     // Semis d'une plaine (tuile de niveau VegetationRenderer::GetPlainLevel) refait par le CPU, en double, pour la

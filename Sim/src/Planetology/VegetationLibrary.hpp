@@ -43,6 +43,8 @@ namespace Flux::Planetology {
             float minScale, maxScale, maxSlope, tint;
             float trunkRadius = 0.0f, trunkHeight = 0.0f; // collision (Planetology/TreeSowing)
             float spacing = 12.0f;                        // m (TreeSpecies::spacing)
+            std::string litter;                           // TreeSpecies::litter
+            bool plant = false;                           // TreeSpecies::plant
         };
         std::vector<Species> species;
         std::vector<BiomeGpu> biomes;

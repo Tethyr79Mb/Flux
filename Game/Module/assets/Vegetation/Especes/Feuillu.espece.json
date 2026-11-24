@@ -13,5 +13,6 @@
   "trunkRadius": 0.35,
   "trunkHeight": 10,
   "spacing": 20,
-  "canopyColor": [0.036, 0.064, 0.011]
+  "canopyColor": [0.036, 0.064, 0.011],
+  "litter": "Modeles/Arbre/Litiere-Feuillu.glb"
 }

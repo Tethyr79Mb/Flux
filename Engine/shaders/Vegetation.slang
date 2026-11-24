@@ -36,7 +36,7 @@ struct CullFrame
     uint4 firstInstances[2]; // de chaque liste
     uint4 capacities[2];
     uint4 commandLists[MaxCommands / 4]; // liste x MaxSpecies + espèce de chaque commande
-    uint4 counts;            // x : commandes ; y : plaines
+    uint4 counts;            // x : commandes ; y : plaines ; z : plantes (TreeSpecies::plant), bit de chaque espèce
     float4 forest;           // x, y : tranche des ombres des forêts au loin (m) ; z : fin du sous-bois (m)
     // Pyramide de profondeur de l'image précédente (OcclusionCulling) : sa vue sans décalage, le déplacement de la
     // caméra depuis (relatif à la caméra -> relatif à l'ancienne), sa taille (x, y : pixels ; z : niveaux ; w : 0 sans
@@ -51,7 +51,8 @@ struct CullFrame
 struct CullCell
 {
     float4 origin; // point de référence de sa tuile, relatif à la caméra ; w : sa case (bits d'un entier)
-    float4 appear; // x : de 0 (tout juste semée) à 1 (VegetationRenderer::FadeTime plus tard, tous ses arbres)
+    float4 appear; // x : de 0 (tout juste semée) à 1 (VegetationRenderer::FadeTime plus tard, tous ses arbres) ;
+                   // yzw : son point de référence, repère de la planète (centre à l'origine), d'où le haut des arbres
 };
 
 [[vk::binding(0, 0)]] StructuredBuffer<CullFrame> cullFrame;
@@ -59,13 +60,13 @@ struct CullCell
 [[vk::binding(2, 0)]] StructuredBuffer<float4> trees;  // computeTrees : 2 par arbre
 [[vk::binding(3, 0)]] StructuredBuffer<uint> treeCounts;
 // Deux float4 par arbre retenu, rangés par espèce : position relative à la caméra, taille ; rotation (quaternion de
-// w positif : xyz seulement), teinte (de -0,5 à 0,5). Lus par vertexTree.
+// w positif : xyz seulement), w : espèce, teinte et pente du sol rangées en bits (PackTree). Lus par vertexTree.
 [[vk::binding(4, 0)]] RWStructuredBuffer<float4> instances;
 // Commandes de dessin (5 entiers chacune, RHI::DrawIndexedCommand), puis les compteurs : arbres de chaque liste, de
 // chaque espèce de chaque liste, place suivante de chaque espèce (computeScatter).
 [[vk::binding(5, 0)]] RWStructuredBuffer<uint> commands;
 [[vk::binding(6, 0)]] RWStructuredBuffer<uint> stats; // arbres de chaque liste, relus par le CPU
-// Les mêmes que instances, dans l'ordre du tri ; w de la rotation : espèce x 4 + teinte + 1.
+// Les mêmes que instances, dans l'ordre du tri.
 [[vk::binding(7, 0)]] RWStructuredBuffer<float4> staged;
 [[vk::binding(8, 0)]] StructuredBuffer<float> depthPyramid; // OcclusionCulling, celle de l'image précédente
 
@@ -94,6 +95,18 @@ float4 Align(float3 up)
     }
     return normalize(float4(up.z, 0.0, -up.x, 1.0 + up.y));
 }
+
+// w de la rotation d'un arbre (instances, staged) : un float de 1 à 2 dont la mantisse (23 bits) porte l'espèce (4 bits),
+// la teinte (5 bits, de -0,5 à 0,5) et la normale du sol dans le repère de l'arbre (x et z, 7 bits chacun, de -0,75 à
+// 0,75 : pentes jusqu'à 48°). Jamais un NaN ni un nombre dénormalisé. Lu par TreeTint et TreeGround (Mesh.slang).
+float PackTree(uint species, float tint, float3 ground)
+{
+    const uint t = uint(saturate(tint + 0.5) * 31.0 + 0.5);
+    const uint2 g = uint2(saturate(ground.xz / 1.5 + 0.5) * 127.0 + 0.5);
+    return asfloat(0x3F800000u | (min(species, 15u) << 19) | (t << 14) | (g.x << 7) | g.y);
+}
+
+uint TreeSpecies(float packed) { return (asuint(packed) >> 19) & 15u; }
 
 // La sphère touche le champ de la caméra (comme ViewCone dans MeshRenderer.cpp).
 bool InView(float3 center, float radius)
@@ -187,14 +200,14 @@ bool Hidden(float3 center, float radius)
 uint FirstInstance(uint list) { return frame.firstInstances[list / 4][list % 4]; }
 uint Capacity(uint list) { return frame.capacities[list / 4][list % 4]; }
 
-void Append(uint list, uint species, float tint, float3 position, float scale, float4 rotation)
+void Append(uint list, uint species, float packed, float3 position, float scale, float4 rotation)
 {
     uint index;
     InterlockedAdd(commands[ListCounters + list], 1u, index);
     if (index < Capacity(list)) {
         const uint at = (FirstInstance(list) + index) * 2;
         staged[at + 0] = float4(position, scale);
-        staged[at + 1] = float4(rotation.xyz * (rotation.w < 0.0 ? -1.0 : 1.0), float(species) * 4.0 + tint + 1.0);
+        staged[at + 1] = float4(rotation.xyz * (rotation.w < 0.0 ? -1.0 : 1.0), packed);
         InterlockedAdd(commands[SpeciesCounters + list * MaxSpecies + species], 1u);
     }
 }
@@ -221,15 +234,21 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         const float4 placed = trees[at + 0];
         const float4 up = trees[at + 1];
         const float3 position = cell.origin.xyz + Rotate(planet, placed.xyz);
-        // Espèce, + 16 pour le sous-bois (computeTrees), qui s'arrête plus près.
+        // Espèce, + 16 pour le sous-bois (computeTrees), qui s'arrête plus près ; une plante, à la fin des modèles
+        // simplifiés (pas d'imposteur).
         const uint packed = uint(up.w / 8.0);
         const uint species = min(packed & 15u, MaxSpecies - 1);
         const float angle = 0.5 * (up.w - float(packed) * 8.0);
-        const float end = packed >= 16u ? frame.forest.z : distances.z;
+        const bool plant = ((frame.counts.z >> species) & 1u) != 0u;
+        const float end = plant ? distances.y : packed >= 16u ? frame.forest.z : distances.z;
         const float4 sphere = frame.spheres[species];
         const float tint = (Random(placed.xyz + 0.37) - 0.5) * frame.tints[species / 4][species % 4] * 2.0;
-        const float3 normal = Rotate(planet, up.xyz); // haut de l'arbre
+        // Haut de l'arbre : radial (le semis garde la normale du sol à sa place).
+        const float3 normal = Rotate(planet, normalize(cell.appear.yzw + placed.xyz));
         const float4 rotation = Multiply(Align(normal), float4(0.0, sin(angle), 0.0, cos(angle)));
+        // Normale du sol dans le repère de l'arbre : le bas du modèle y est plaqué (TreePosition, Mesh.slang).
+        const float3 ground = Rotate(float4(-rotation.xyz, rotation.w), Rotate(planet, up.xyz));
+        const float bits = PackTree(species, tint, ground);
         // Plaine tout juste semée en vue : chaque arbre apparaît à son heure (tirée de sa place), en grandissant vite,
         // plutôt que toute la plaine d'un coup. Un fondu tramé au pixel demanderait un discard à l'écorce, qui perdrait
         // le test de profondeur précoce de tous les arbres.
@@ -251,17 +270,19 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
         }
         if (inView && !hidden) {
             if (distance < distances.y) {
-                Append(distance < distances.x ? 0 : 1, species, tint, position, scale, rotation);
+                // Une plante rapetisse jusqu'à disparaître avant la fin des modèles simplifiés (elle n'a pas d'imposteur).
+                const float fade = plant ? saturate((end - distance) / max(0.2 * end, 1.0)) : 1.0;
+                Append(distance < distances.x ? 0 : 1, species, bits, position, scale * fade, rotation);
             }
             // Dans la bande avant farDistance, l'imposteur aussi, qui s'efface en approchant (ImpostorFade).
-            if (distance >= distances.y * (1.0 - ImpostorFadeShare)) {
+            if (!plant && distance >= distances.y * (1.0 - ImpostorFadeShare)) {
                 // Au loin, l'imposteur (vertexImpostor, deux triangles) : tous gardés, aucun arbre n'apparaît en
                 // approchant (on n'en gardait qu'une part, qui grandissait avec la proximité). Près de la portée, ils
                 // rapetissent jusqu'à disparaître ; la couleur des forêts sur le sol (fragmentPlanet) prend le relais.
                 const float shrink = saturate((end - distance) / max(0.15 * end, 1.0));
-                Append(2, species, tint, position, scale * shrink, rotation);
+                Append(2, species, bits, position, scale * shrink, rotation);
             }
-        } else if (distance + radius > frame.forest.x && distance - radius < frame.forest.y) {
+        } else if (!plant && distance + radius > frame.forest.x && distance - radius < frame.forest.y) {
             // Hors du champ ou caché, au loin : son ombre peut tomber dans le champ (soleil de côté, arbre derrière une
             // crête) ; sans elle, les ombres apparaissaient et disparaissaient en tournant. Imposteur vu du soleil
             // seulement (carte des forêts, qui ne prend sinon que les listes de la caméra).
@@ -270,7 +291,7 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             const float length = sunHeight > 0.0 ? min(frame.toSun.w, 2.0 * top / sunHeight) : frame.toSun.w;
             if (ReachesSlice(center, radius, length, frame.forest.x, frame.forest.y)) {
                 const float shrink = saturate((end - distance) / max(0.15 * end, 1.0));
-                Append(7, species, tint, position, scale * shrink, rotation);
+                Append(7, species, bits, position, scale * shrink, rotation);
             }
         }
         // Ombres : le modèle simplifié, dans chaque cascade qu'il touche et dont la tranche peut recevoir son ombre.
@@ -283,7 +304,7 @@ void computeCull(uint thread : SV_GroupIndex, uint3 group : SV_GroupID)
             [unroll]
             for (uint c = 0; c < 4; ++c) {
                 if (InCascade(center, radius, c) && ReachesView(center, radius, length, c)) {
-                    Append(3 + c, species, tint, position, scale, rotation);
+                    Append(3 + c, species, bits, position, scale, rotation);
                 }
             }
         }
@@ -341,10 +362,10 @@ void computeScatter(uint3 id : SV_DispatchThreadID)
     }
     const float4 placed = staged[index * 2 + 0];
     const float4 rotation = staged[index * 2 + 1];
-    const uint species = min(uint(rotation.w * 0.25), MaxSpecies - 1);
+    const uint species = min(TreeSpecies(rotation.w), MaxSpecies - 1);
     uint at;
     InterlockedAdd(commands[Cursors + list * MaxSpecies + species], 1u, at);
     const uint target = (FirstInstance(list) + at) * 2;
     instances[target + 0] = placed;
-    instances[target + 1] = float4(rotation.xyz, rotation.w - float(species) * 4.0 - 1.0);
+    instances[target + 1] = rotation;
 }

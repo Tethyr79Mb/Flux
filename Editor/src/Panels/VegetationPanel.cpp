@@ -495,6 +495,20 @@ namespace FluxEditor {
             ui.SetItemTooltip("D'un arbre à l'autre (0 : tous pareils)");
             changed |= ui.ColorEdit3("Couleur des cimes", species.canopyColor);
             ui.SetItemTooltip("Couleur des forêts vues de loin, sur le sol");
+            changed |= ui.Checkbox("Plante", species.plant);
+            ui.SetItemTooltip("Plante du sous-bois (fougère, buisson) : garde sa taille dans le sous-bois et n'a pas "
+                              "d'imposteur (rien au-delà de la distance des imposteurs)");
+        }
+        if (ui.CollapsingHeader("Litière")) {
+            changed |= DrawAsset(engine, ui, "Litière", AssetType::Model, species.litter);
+            ui.SetItemTooltip("Carré à plat dont l'image (répétée tous les 1,5 m) et le rayon donnent la litière peinte "
+                              "sur le sol au pied des arbres de près");
+            ui.BeginDisabled(species.litter.empty());
+            if (ui.Button("Sans litière")) {
+                species.litter.clear();
+                changed = true;
+            }
+            ui.EndDisabled();
         }
         if (ui.CollapsingHeader("Collision")) {
             changed |= ui.DragFloat("Rayon du tronc (m)", species.trunkRadius, 0.01f, 0.0, 10.0, 2);

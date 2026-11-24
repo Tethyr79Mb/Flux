@@ -350,11 +350,17 @@ namespace Flux::Planetology {
             const Math::Vector3d du = ground(site.u + e, site.v) - site.local;
             const Math::Vector3d dv = ground(site.u, site.v + e) - site.local;
             // Comme SowPlace : <= et borné à 1 (une pente maximale nulle n'en laisse aucun).
-            if (std::min(std::abs(Math::Dot(Math::Normalize(Math::Cross(du, dv)), site.direction)), 1.0) <= maxSlope) {
+            const Math::Vector3d normal = Math::Normalize(Math::Cross(du, dv));
+            const double cosine = Math::Dot(normal, site.direction);
+            if (std::min(std::abs(cosine), 1.0) <= maxSlope) {
                 return false;
             }
-            const double scale = Lerp(traits.minScale, traits.maxScale, TreeRandom(state)) * scaleFactor;
-            trees.push_back({site.local, static_cast<float>(scale), species, understory});
+            // Une plante du sous-bois garde sa taille : la réduction du sous-bois fait des jeunes arbres.
+            const double factor = understory && traits.plant ? 1.0 : scaleFactor;
+            const double scale = Lerp(traits.minScale, traits.maxScale, TreeRandom(state)) * factor;
+            const Math::Vector3d below = cosine < 0.0 ? -normal : normal;
+            trees.push_back({site.local, static_cast<float>(scale), species, understory,
+                             Math::Vector3f(static_cast<float>(below.x), static_cast<float>(below.y), static_cast<float>(below.z))});
             return true;
         };
         for (std::uint32_t c = 0; c < TreeGrid * TreeGrid; ++c) {

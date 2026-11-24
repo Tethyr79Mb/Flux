@@ -442,6 +442,7 @@ namespace Flux::Vk {
         vkDesc.alphaBlend = desc.blend == RHI::BlendMode::Alpha;
         vkDesc.additiveBlend = desc.blend == RHI::BlendMode::Additive;
         vkDesc.premultipliedBlend = desc.blend == RHI::BlendMode::Premultiplied;
+        vkDesc.decalBlend = desc.blend == RHI::BlendMode::Decal;
         vkDesc.depthBiasConstant = desc.depthBiasConstant;
         vkDesc.depthBiasSlope = desc.depthBiasSlope;
         vkDesc.depthClamp = desc.depthClamp;

@@ -1,0 +1,23 @@
+{
+  "variants": [
+    {
+      "model": "Modeles/Fougere/Fougere-1.glb",
+      "lodModel": "Modeles/Fougere/Fougere-1-lod1.glb",
+      "farModel": "Modeles/Fougere/Fougere-1-lod1.glb"
+    },
+    {
+      "model": "Modeles/Fougere/Fougere-2.glb",
+      "lodModel": "Modeles/Fougere/Fougere-2-lod1.glb",
+      "farModel": "Modeles/Fougere/Fougere-2-lod1.glb"
+    }
+  ],
+  "minScale": 0.8,
+  "maxScale": 1.4,
+  "maxSlope": 40,
+  "tint": 0.25,
+  "trunkRadius": 0,
+  "trunkHeight": 0,
+  "spacing": 2,
+  "canopyColor": [0.03, 0.07, 0.012],
+  "plant": true
+}
