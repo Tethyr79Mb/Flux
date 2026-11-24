@@ -6,15 +6,15 @@
 namespace Flux::Planetology {
     namespace {
         // Doit correspondre à DrawParams dans shaders/Mesh.slang (MeshRenderer.cpp), dont Clouds.slang lit ses réglages :
-        // color.xy, 1 / taille de la demi-résolution ; color.z, 1 si l'historique est valable ; color.w, part de
-        // l'image actuelle ; emissive.xy, taille de la pleine résolution ; emissive.zw, de la demi-résolution ;
-        // cascade et transparent, pas le long du rayon et vers le soleil (CloudQuality).
+        // color.xy, 1 / taille des textures de travail ; color.z, 1 si l'historique est valable ; color.w, part de
+        // l'image actuelle ; emissive.xy, taille de la pleine résolution ; emissive.zw, de la marche ; alphaCutoff,
+        // pixels pleins par pixel de la marche ; cascade et transparent, pas le long du rayon et vers le soleil.
         struct CloudParams
         {
             std::array<float, 4> color;
             std::array<float, 4> emissive;
             std::uint32_t steps;      // DrawParams::cascade
-            float unused0;            // DrawParams::alphaCutoff
+            float scale;              // DrawParams::alphaCutoff
             std::uint32_t lightSteps; // DrawParams::transparent
             std::array<std::uint32_t, 9> unused;
         };
@@ -22,6 +22,11 @@ namespace Flux::Planetology {
 
         // Part de l'image actuelle mêlée à l'historique : la moyenne d'une dizaine d'images.
         constexpr float CurrentWeight = 0.1f;
+
+        // Hauteurs de la caméra au-dessus des nuages (m) où la marche passe à la pleine résolution, et d'où elle revient à
+        // la moitié. Plus bas, les rayons rasants qui longent la couche coûtent le plus : la moitié y reste.
+        constexpr float FullResolutionAbove = 30000.0f;
+        constexpr float HalfResolutionBelow = 20000.0f;
     }
 
     std::expected<std::unique_ptr<CloudRenderer>, std::string> CloudRenderer::Create(RHI::Device& device, const MeshRenderer& meshes,
@@ -114,15 +119,37 @@ namespace Flux::Planetology {
         }
     }
 
+    void CloudRenderer::SetCameraHeight(float height) {
+        std::uint32_t scale = m_scale;
+        if (m_quality == CloudQuality::Low) {
+            scale = 2;
+        } else if (height > FullResolutionAbove) {
+            scale = 1;
+        } else if (height < HalfResolutionBelow) {
+            scale = 2;
+        }
+        if (scale != m_scale) {
+            m_scale = scale;
+            m_historyValid = false; // l'historique est à l'autre résolution
+        }
+    }
+
+    RHI::Extent CloudRenderer::GetMarchExtent() const {
+        const RHI::Extent full = m_targets.sceneDepth->GetExtent();
+        return {(full.width + m_scale - 1) / m_scale, (full.height + m_scale - 1) / m_scale};
+    }
+
     void CloudRenderer::Draw(RHI::CommandList& commands, std::uint32_t frameIndex, const RHI::Pipeline& pipeline,
                              const RHI::BindGroup& group, float historyValid) const {
         const RHI::Extent full = m_targets.sceneDepth->GetExtent();
-        const RHI::Extent half = m_targets.light->GetExtent();
-        const CloudParams params{{1.0f / static_cast<float>(half.width), 1.0f / static_cast<float>(half.height), historyValid, CurrentWeight},
-                                 {static_cast<float>(full.width), static_cast<float>(full.height), static_cast<float>(half.width),
-                                  static_cast<float>(half.height)},
+        const RHI::Extent texture = m_targets.light->GetExtent();
+        const RHI::Extent march = GetMarchExtent();
+        const CloudParams params{{1.0f / static_cast<float>(texture.width), 1.0f / static_cast<float>(texture.height), historyValid,
+                                  CurrentWeight},
+                                 {static_cast<float>(full.width), static_cast<float>(full.height), static_cast<float>(march.width),
+                                  static_cast<float>(march.height)},
                                  GetCloudSteps(m_quality).view,
-                                 0.0f,
+                                 static_cast<float>(m_scale),
                                  GetCloudSteps(m_quality).light,
                                  {}};
         commands.BindPipeline(pipeline);

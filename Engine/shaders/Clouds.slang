@@ -1,5 +1,7 @@
 // Nuages volumétriques des planètes (Planetology::CloudRenderer), en trois passes plein écran après la scène opaque :
-// 1. fragmentCloudMarch, à la moitié de la résolution : chaque pixel traverse la couche de nuages la plus proche le
+// 1. fragmentCloudMarch, à la moitié de la résolution de rendu (à la pleine au-dessus des nuages, voir
+//    CloudRenderer::SetCameraHeight : vue de l'orbite, un nuage ne fait que quelques pixels et la moitié les dessinait en
+//    escalier ; le rayon n'y traverse que la couche, la pleine résolution coûte peu) : chaque pixel traverse la couche de nuages la plus proche le
 //    long de son rayon, jusqu'au relief ou au vaisseau qui l'arrête (profondeur de la scène). À chaque pas, la densité
 //    vient des textures 3D de bruit (CloudNoise.slang) : la carte météo dit où sont les formations et leur type
 //    (stratus plats, cumulus en tours), la texture de forme y sculpte des masses arrondies, celle de détail en ronge
@@ -8,12 +10,14 @@
 //    contre-jour s'argentent).
 // 2. fragmentCloudResolve : mêlé à l'historique (la même chose à l'image précédente, retrouvée là où était le nuage),
 //    10 % de nouveau : le départ de chaque rayon change à chaque image et la moyenne efface le grain, comme si chaque
-//    pixel avait fait dix fois plus de pas. Ramené dans les couleurs du voisinage pour ne pas laisser de traînées.
+//    pixel avait fait dix fois plus de pas. Le rayon passe aussi à un autre endroit du pixel à chaque image : la moyenne
+//    lisse les bords des nuages comme un anticrénelage. Ramené dans les couleurs du voisinage pour ne pas laisser de
+//    traînées.
 // 3. fragmentCloudComposite, à pleine résolution : mélangé à la scène, chaque pixel prenant les pixels voisins de la
-//    demi-résolution dont la profondeur ressemble à la sienne (pas de halo autour des montagnes), et rien devant un
+//    résolution de la marche dont la profondeur ressemble à la sienne (pas de halo autour des montagnes), et rien devant un
 //    objet plus proche que le premier nuage. En FSR, fragmentCloudReactive écrit aussi leur opacité dans son masque.
 // Coût : surtout la passe 1, une poignée de lectures de texture par pas, pas éclairés seulement là où il y a du nuage ;
-// au quart du nombre de pixels de l'image.
+// au quart du nombre de pixels de l'image (à tous au-dessus des nuages, où les rayons sont courts).
 
 #include "Mesh.slang"
 
@@ -26,14 +30,36 @@
 [[vk::binding(5, 3)]] Sampler2D cloudHistory;     // passe 2 : le résultat d'avant ; passe 3 : celui de cette image
 
 // Les réglages arrivent par DrawParams (Mesh.slang, une seule constante poussée par shader) :
-// color.xy : 1 / taille de la demi-résolution ; color.z : 1 si l'historique est valable ; color.w : part de l'image
-// actuelle ; emissive.xy : taille de la pleine résolution ; emissive.zw : de la demi-résolution (pixels) ; cascade :
-// pas le long du rayon, transparent : pas vers le soleil (qualité des nuages, CloudQuality).
-float2 CloudHalfTexel() { return params.color.xy; }
+// color.xy : 1 / taille des textures de travail (celle de rendu ; la marche n'en remplit que le coin en haut à gauche
+// en demi-résolution) ; color.z : 1 si l'historique est valable ; color.w : part de l'image actuelle ; emissive.xy :
+// taille de la pleine résolution ; emissive.zw : de la marche (pixels) ; alphaCutoff : pixels pleins par pixel de la
+// marche sur chaque axe (1 ou 2) ; cascade : pas le long du rayon, transparent : pas vers le soleil (CloudQuality).
+float2 CloudTexel() { return params.color.xy; }
 int CloudSteps() { return int(params.cascade); }
 int CloudLightSteps() { return int(params.transparent); }
 float2 CloudFullSize() { return params.emissive.xy; }
-float2 CloudHalfSize() { return params.emissive.zw; }
+float2 CloudMarchSize() { return params.emissive.zw; }
+int CloudMarchScale() { return int(params.alphaCutoff); }
+
+// uv de la marche (0 à 1 sur sa taille) vers celles des textures de travail, en restant dans la partie écrite : le
+// filtre bilinéaire n'y prend rien de ce qui reste d'une image en pleine résolution.
+float2 CloudTextureUv(float2 uv)
+{
+    return clamp(uv * CloudMarchSize(), 0.5, CloudMarchSize() - 0.5) * CloudTexel();
+}
+
+// Suite de Halton (base 2 ou 3) : des points du pixel qui se répartissent bien quelle que soit la longueur de la série.
+float CloudHalton(uint index, uint base)
+{
+    float result = 0.0;
+    float fraction = 1.0;
+    while (index > 0u) {
+        fraction /= float(base);
+        result += fraction * float(index % base);
+        index /= base;
+    }
+    return result;
+}
 
 // Échelles des textures, en tailles de formation (CloudsComponent::size) : la forme se répète tous les demi-formations
 // (des masses d'un huitième de formation), le détail tous les seizièmes.
@@ -201,17 +227,24 @@ struct CloudMarchOutput
 CloudMarchOutput fragmentCloudMarch(CloudVertexOutput input)
 {
     const FrameData f = frame[0];
-    const float3 direction = CloudRay(f, input.uv);
 
-    // Le rayon s'arrête au plus loin des 4 pixels pleins sous ce pixel : la composition écarte ensuite le nuage devant
-    // les pixels plus proches qui ne le voient pas (voir fragmentCloudComposite).
-    const int2 full = int2(input.position.xy) * 2;
+    // Le rayon s'arrête au plus loin des pixels pleins sous ce pixel (4 en demi-résolution) : la composition écarte
+    // ensuite le nuage devant les pixels plus proches qui ne le voient pas (voir fragmentCloudComposite).
+    const int scale = CloudMarchScale();
+    const int2 full = int2(input.position.xy) * scale;
     const int2 last = int2(CloudFullSize()) - 1;
     float depth = 1.0;
     [unroll]
     for (int i = 0; i < 4; ++i) {
-        depth = min(depth, cloudSceneDepth.Load(int3(min(full + int2(i & 1, i >> 1), last), 0)).r);
+        if (i < scale * scale) {
+            depth = min(depth, cloudSceneDepth.Load(int3(min(full + int2(i & 1, i >> 1), last), 0)).r);
+        }
     }
+    // Un autre point du pixel à chaque image (8 points de Halton) : l'historique en fait la moyenne, les bords des
+    // nuages sont lissés au lieu de suivre les pixels de la marche en escalier.
+    const uint jitterIndex = f.lightCount.w % 8u + 1u;
+    const float2 subPixel = float2(CloudHalton(jitterIndex, 2u), CloudHalton(jitterIndex, 3u)) - 0.5;
+    const float3 direction = CloudRay(f, input.uv + subPixel / CloudMarchSize());
     const float geometry = CloudDepthToDistance(f, direction, depth);
 
     CloudMarchOutput output;
@@ -240,9 +273,9 @@ CloudMarchOutput fragmentCloudMarch(CloudVertexOutput input)
     // Peu de couverture : surtout des cumulus ; ciel couvert : surtout des stratus.
     c.type = saturate(PlanetNoise(p * 0.35 + 57.0) * 1.6 - 0.3 + (0.5 - c.planet.cloudShape.x) * 0.8);
 
-    // Niveau de mip selon la taille d'un pixel (demi-résolution) au premier nuage : sans lui, la texture répétée au loin
+    // Niveau de mip selon la taille d'un pixel (de la marche) au premier nuage : sans lui, la texture répétée au loin
     // scintillerait. Côté d'un texel de la forme : un demi de formation sur 128.
-    const float pixel = length(f.cameraRight.xyz) * 2.0 / CloudHalfSize().x;
+    const float pixel = length(f.cameraRight.xyz) * 2.0 / CloudMarchSize().x;
     const float texel = 1.0 / (c.scale * CloudShapeRepeat * 128.0);
     const float lod = max(log2(max(start, 1.0) * pixel / texel), 0.0);
     // Carte météo : moins d'octaves au loin, où ses détails sont plus petits qu'un pixel.
@@ -313,7 +346,10 @@ CloudMarchOutput fragmentCloudMarch(CloudVertexOutput input)
         float3 ambient = sky;
         if (air) {
             sunLight = f.sunColor.rgb * AtmosphereSunTransmittance(f.atmosphere, fromCenter, toSun);
-            ambient = AtmosphereAmbient(f.atmosphere, fromCenter, up, toSun) + sky * AtmosphereNightSky(f.atmosphere, fromCenter, toSun);
+            // Le ciel de l'espace la nuit : celui du sol sous le nuage. Pris à l'altitude du nuage, encore loin du haut de
+            // l'air, il en passait dix fois plus et les nuages du côté nuit restaient gris sur un sol noir.
+            ambient = AtmosphereAmbient(f.atmosphere, fromCenter, up, toSun)
+                    + sky * AtmosphereNightSky(f.atmosphere, up * f.atmosphere.center.w, toSun);
         }
         // Diffusion multiple approchée (Wrenninge) : trois ordres, chacun moins atténué et moins orienté que le précédent.
         float scattered = 0.0;
@@ -391,7 +427,7 @@ float4 fragmentCloudResolve(CloudVertexOutput input) : SV_Target
 {
     const FrameData f = frame[0];
     const float2 uv = input.uv;
-    const float2 texel = CloudHalfTexel();
+    const float2 at = CloudTextureUv(uv);
     // Voisinage 3 x 3 de l'image actuelle : la boîte où ramener l'historique (lumière compressée et opacité).
     float4 low = float4(1.0e9);
     float4 high = float4(-1.0e9);
@@ -400,7 +436,7 @@ float4 fragmentCloudResolve(CloudVertexOutput input) : SV_Target
     for (int y = -1; y <= 1; ++y) {
         [unroll]
         for (int x = -1; x <= 1; ++x) {
-            const float4 value = cloudCurrent.SampleLevel(uv + float2(x, y) * texel, 0.0);
+            const float4 value = cloudCurrent.SampleLevel(CloudTextureUv(uv + float2(x, y) / CloudMarchSize()), 0.0);
             const float4 compressed = float4(CloudCompress(max(value.rgb, float3(0.0))), value.a);
             low = min(low, compressed);
             high = max(high, compressed);
@@ -409,14 +445,14 @@ float4 fragmentCloudResolve(CloudVertexOutput input) : SV_Target
             }
         }
     }
-    const float4 distances = cloudDistances.SampleLevel(uv, 0.0);
+    const float4 distances = cloudDistances.SampleLevel(at, 0.0);
     // Le nuage moyen s'il y en a un, sinon ce qui arrête le rayon (relief, ou l'infini).
     const float distance = distances.y < CloudFar ? distances.y : distances.z;
     const float2 previousUv = CloudReproject(f, CloudRay(f, uv), distance);
     const bool inside = all(previousUv >= 0.0) && all(previousUv <= 1.0);
     float4 result = center;
     if (params.color.z > 0.0 && inside) {
-        float4 old = cloudHistory.SampleLevel(previousUv, 0.0);
+        float4 old = cloudHistory.SampleLevel(CloudTextureUv(previousUv), 0.0);
         old.rgb *= f.environment.y; // écrit avec la pré-exposition de l'image précédente
         const float4 clamped = clamp(float4(CloudCompress(max(old.rgb, float3(0.0))), old.a), low, high);
         result = lerp(clamped, center, params.color.w);
@@ -431,10 +467,10 @@ float4 CloudAtPixel(CloudVertexOutput input)
     const float2 uv = input.uv;
     const float3 direction = CloudRay(f, uv);
     const float scene = CloudDepthToDistance(f, direction, cloudSceneDepth.SampleLevel(uv, 0.0).r);
-    // Les 4 pixels de la demi-résolution autour de celui-ci, pondérés comme un filtre bilinéaire et par la ressemblance
+    // Les 4 pixels de la marche autour de celui-ci, pondérés comme un filtre bilinéaire et par la ressemblance
     // entre la fin de leur rayon et la profondeur de ce pixel : au bord d'une montagne, ce pixel prend le nuage de ses
     // voisins du même côté que lui.
-    const float2 position = uv * CloudHalfSize() - 0.5;
+    const float2 position = uv * CloudMarchSize() - 0.5;
     const float2 base = floor(position);
     const float2 fraction = position - base;
     float4 sum = float4(0.0);
@@ -444,7 +480,7 @@ float4 CloudAtPixel(CloudVertexOutput input)
     [unroll]
     for (int i = 0; i < 4; ++i) {
         const float2 offset = float2(i & 1, i >> 1);
-        const float2 at = (base + offset + 0.5) * CloudHalfTexel();
+        const float2 at = (clamp(base + offset, 0.0, CloudMarchSize() - 1.0) + 0.5) * CloudTexel();
         const float4 distances = cloudDistances.SampleLevel(at, 0.0);
         const float2 bilinear = lerp(1.0 - fraction, fraction, offset);
         const float difference = abs(log2(max(distances.z, 1.0) / max(scene, 1.0)));

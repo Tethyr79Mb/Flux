@@ -1051,6 +1051,7 @@ namespace Flux {
         m_thrusters.clear();
         m_planetData.clear();
         m_hasClouds = false;
+        m_cloudHeight = std::numeric_limits<float>::max();
         m_waveCandidate = {};
         ++m_preparedFrame;
         m_occlusionActive = m_occlusion->Begin(frameIndex, temporal.continuous, temporal.previousViewProjection);
@@ -1597,7 +1598,13 @@ namespace Flux {
             }
             if (clouds) {
                 AddClouds(m_planetData[index], transform, planet, *clouds);
-                m_hasClouds = m_hasClouds || m_planetData[index].clouds[3] > 0.0f;
+                const Planetology::PlanetGpu& layer = m_planetData[index];
+                if (layer.clouds[3] > 0.0f) {
+                    m_hasClouds = true;
+                    const Math::Vector3d center{layer.clouds[0], layer.clouds[1], layer.clouds[2]};
+                    const double height = Math::Length(center) - static_cast<double>(layer.clouds[3]) - layer.cloudColor[3];
+                    m_cloudHeight = std::min(m_cloudHeight, static_cast<float>(height));
+                }
             }
         }
         // Surface de l'océan : sur les tuiles qui descendent sous le niveau de la mer.

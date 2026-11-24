@@ -58,7 +58,6 @@ namespace Flux {
             Render, // la scène dessinée (couleur, mouvement, profondeur) : la vue 3D, ou moins quand FSR l'agrandit
             View,   // la vue 3D (historique, résultat de FSR)
             Window, // la fenêtre (profondeur de l'image finale)
-            HalfView, // la moitié de la taille de rendu, arrondie au-dessus (nuages)
         };
         struct TextureDesc
         {
