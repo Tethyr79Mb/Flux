@@ -459,6 +459,13 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ⬜ Interdire de se lever en vol hors gravité (chute sans fin).
 - ⬜ GameMode (règles de partie : personnage du joueur, point d'apparition, interface, victoire), quand il y aura des règles à y mettre.
 
+## Optimisations (pas urgentes ; Bruno, 2026-11-24)
+- ⬜ Sommets des modèles compressés : 32 octets aujourd'hui (`ModelVertex` en `float`), viser 16 à 20 (normale en
+  octaèdre 2×16 bits, UV en demi-flottants) et poids des os sur 4 octets au lieu de 16. Mesurer le gain d'abord (Release).
+- ⬜ Identifiant réseau compact : un numéro court par connexion au lieu de l'`Uuid` de 8 octets écrit pour chaque entité
+  changée dans chaque instantané. Avant d'avoir beaucoup de joueurs.
+- ⬜ Conversion degrés-radians en une constante de `Math` (réécrite dans 18 fichiers).
+
 ## Plus tard
 - ⬜ Mises à jour, gérées par le moteur : manifeste de version (liste des fichiers et de leurs empreintes) publié en HTTPS, seuls les fichiers
   changés téléchargés puis vérifiés, retour à la version précédente en cas d'échec. Le Launcher s'en sert ; Ars Solaris.exe
