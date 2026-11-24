@@ -42,6 +42,12 @@ namespace Flux {
         PrepareGroundCost,
         PrepareTreesCost,
         PrepareUploadsCost,
+        // Parties des envois et lots (RenderTimings::prepareUploadData…).
+        PrepareUploadDataCost,
+        PrepareTileCommandsCost,
+        PrepareModelBatchesCost,
+        PrepareOpaqueBatchesCost,
+        PrepareShadowBatchesCost,
         CostCount,
     };
 

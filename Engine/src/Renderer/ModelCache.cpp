@@ -567,6 +567,11 @@ namespace Flux {
                 }
             }
         }
+        const auto masked = [&model](const ModelPrimitive& primitive) {
+            return primitive.material < model.materials.size() && model.materials[primitive.material].alphaCutoff > 0.0f;
+        };
+        model.maskedShadows = std::ranges::any_of(model.shadowPrimitives, masked)
+                           || std::ranges::any_of(model.lods, [&](const ModelLod& lod) { return std::ranges::any_of(lod.shadowPrimitives, masked); });
         model.clusters = data.clusters;
         model.bounds = data.bounds;
         if (m_rayTracing && !model.animated) {

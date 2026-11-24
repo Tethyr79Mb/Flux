@@ -59,6 +59,12 @@ namespace Flux {
         double prepareGround = 0.0;
         double prepareTrees = 0.0;
         double prepareUploads = 0.0;
+        // Parties de `prepareUploads` : données de l'image, commandes des tuiles, lots des modèles.
+        double prepareUploadData = 0.0;
+        double prepareTileCommands = 0.0;
+        double prepareModelBatches = 0.0;
+        double prepareOpaqueBatches = 0.0; // parties de `prepareModelBatches` : opaques, ombres
+        double prepareShadowBatches = 0.0;
         double record = 0.0;   // CPU : enregistrement des commandes de dessin et soumission
         double waitGpu = 0.0;  // CPU arrêté : le GPU n'a pas fini l'image qui utilisait les mêmes ressources
         double waitImage = 0.0; // CPU arrêté : aucune image de la fenêtre libre (V-Sync, plafond du pilote)

@@ -409,6 +409,11 @@ namespace Flux {
             stats.Add(PrepareGroundCost, render.prepareGround);
             stats.Add(PrepareTreesCost, render.prepareTrees);
             stats.Add(PrepareUploadsCost, render.prepareUploads);
+            stats.Add(PrepareUploadDataCost, render.prepareUploadData);
+            stats.Add(PrepareTileCommandsCost, render.prepareTileCommands);
+            stats.Add(PrepareModelBatchesCost, render.prepareModelBatches);
+            stats.Add(PrepareOpaqueBatchesCost, render.prepareOpaqueBatches);
+            stats.Add(PrepareShadowBatchesCost, render.prepareShadowBatches);
             stats.Add(WaitGpuCost, render.waitGpu);
             stats.Add(WaitImageCost, render.waitImage + render.present);
             stats.AddGpu(render.gpu);
