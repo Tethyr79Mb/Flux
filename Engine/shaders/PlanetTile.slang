@@ -34,7 +34,8 @@ struct TileInputs
     float4 axisS;  // xyz : axe s ; w : relief
     float4 axisT;  // xyz : axe t ; w : profondeur des jupes
     uint4 options; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (OctaveShift)
-    uint4 wetness; // humidité du relief : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu (float)
+    uint4 wetness; // humidité du relief : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu (float) ;
+                   // w : 1 si carve porte le creusement de l'érosion
     // Réglages de la forme (Terrain::ShapeConstants) : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains,
     // detailHills, detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance,
     // craterChance, craterGain, tailles de cratères), (craterDepth, craterRim, craterWear, craterComplex).
@@ -43,6 +44,9 @@ struct TileInputs
     int4 cells[OctaveCount];
     float4 fractions[OctaveCount]; // couches déformées : au point déformé du centre
     uint4 permutation[32];
+    // Creusement de la carte d'érosion (m) aux points des colonnes (ci, cj) de la grille, calculé par le CPU comme
+    // Terrain::GetHeight ; trois de plus pour l'alignement.
+    float carve[Columns * Columns + 3];
 };
 
 struct Constants
@@ -61,7 +65,7 @@ struct Constants
 // Boîte de chaque paquet des mesh shaders (PlanetTileCompute::Meshlet : bas, haut) : MeshletCount par tuile.
 [[vk::binding(2, 1)]] RWStructuredBuffer<float4> meshlets;
 [[vk::push_constant]] ConstantBuffer<Constants> constants;
-// Lue directement dans le buffer (une copie locale de 2,5 Ko déborderait des registres).
+// Lue directement dans le buffer (une copie locale de 8 Ko déborderait des registres).
 #define tile inputs[constants.job]
 
 groupshared uint permutation[512];
@@ -638,6 +642,30 @@ float3 Delta(uint ci, uint cj)
     return dv / l - vc * (growth / (l * lc * (l + lc)));
 }
 
+// Creusement de l'érosion au point des colonnes (ci, cj), comme Delta ; à ajouter à Height.
+float Carve(uint ci, uint cj)
+{
+    return tile.wetness.w != 0 ? tile.carve[cj * Columns + ci] : 0.0;
+}
+
+// Le même entre les points (u, v : position dans la grille, comme TreeDelta) : bilinéaire entre les sommets, à moins
+// d'un centimètre du creusement exact sur les tuiles fines où poussent les arbres (la carte a des mailles de ~1 km).
+float CarveAt(float u, float v)
+{
+    if (tile.wetness.w == 0) {
+        return 0.0;
+    }
+    const float x = clamp(u + 2.0, 0.0, float(Columns - 1));
+    const float y = clamp(v + 2.0, 0.0, float(Columns - 1));
+    const uint ci = min(uint(x), Columns - 2);
+    const uint cj = min(uint(y), Columns - 2);
+    const float fu = x - float(ci);
+    const float fv = y - float(cj);
+    const float bottom = lerp(tile.carve[cj * Columns + ci], tile.carve[cj * Columns + ci + 1], fu);
+    const float top = lerp(tile.carve[(cj + 1) * Columns + ci], tile.carve[(cj + 1) * Columns + ci + 1], fu);
+    return lerp(bottom, top, fv);
+}
+
 // Position relative au centre de la tuile : d.(R + h) - d_c.R = d_c.h + δ.(R + h).
 float3 Local(float3 delta, float height)
 {
@@ -849,13 +877,13 @@ void computeMain(uint thread : SV_GroupIndex)
             const uint i = p % Wide;
             const uint j = p / Wide;
             float2 zones;
-            wideHeights[p] = Height(Delta(i + 1, j + 1), tile.options.x, zones);
+            wideHeights[p] = Height(Delta(i + 1, j + 1), tile.options.x, zones) + Carve(i + 1, j + 1);
             wideZones[p] = packHalf2x16(zones);
         } else {
             const uint c = p - Wide * Wide;
             const uint ci = c % Coarse;
             const uint cj = c / Coarse;
-            coarseHeights[c] = Height(Delta(2 * ci, 2 * cj), tile.options.y);
+            coarseHeights[c] = Height(Delta(2 * ci, 2 * cj), tile.options.y) + Carve(2 * ci, 2 * cj);
         }
     }
     GroupMemoryBarrierWithGroupSync();
@@ -1132,7 +1160,7 @@ uint SiteBiome(TreeJob job, inout SowSite site)
     const float relief = max(job.shape.y, 1.0);
     const uint biomeCount = min(sowVegetation[0].counts.x, MaxBiomes);
     float2 zones;
-    const float height = Height(site.delta, tile.options.x, zones);
+    const float height = Height(site.delta, tile.options.x, zones) + CarveAt(site.u, site.v);
     // Ni plage (ni fond de la mer), ni neige (en dessous, la limite des arbres).
     if (height < job.shape.w + 2.0 || height > job.shape.z - 0.1 * relief) {
         return MaxBiomes;
@@ -1163,8 +1191,10 @@ bool Plant(SowSite site, uint firstVariant, uint variants, float scaleFactor, in
     const float4 traits = sowVegetation[0].species[species];
     // Pente : le sol un quart de maille plus loin le long des deux axes de la face.
     const float e = 0.25;
-    const float3 du = Local(TreeDelta(site.u + e, site.v), Height(TreeDelta(site.u + e, site.v), octaves)) - site.position;
-    const float3 dv = Local(TreeDelta(site.u, site.v + e), Height(TreeDelta(site.u, site.v + e), octaves)) - site.position;
+    const float3 du = Local(TreeDelta(site.u + e, site.v), Height(TreeDelta(site.u + e, site.v), octaves) + CarveAt(site.u + e, site.v))
+                    - site.position;
+    const float3 dv = Local(TreeDelta(site.u, site.v + e), Height(TreeDelta(site.u, site.v + e), octaves) + CarveAt(site.u, site.v + e))
+                    - site.position;
     const float3 up = normalize(site.local);
     // <= et borné à 1 : une pente maximale nulle n'en laisse aucun, même là où le float arrondit le sol à plat.
     if (min(abs(dot(normalize(cross(du, dv)), up)), 1.0) <= traits.z) {

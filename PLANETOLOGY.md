@@ -44,6 +44,10 @@ Ordre conseillé des réglages, du plus grand au plus fin :
    double presque les terres en montagne), `Part des collines`, `Hauteur des collines`, `Densité des sommets` (chance
    qu'une maille porte un sommet, 0,85), `Rugosité des plaines` (garder bas pour se poser), `Rugosité des reliefs`,
    `Ravines`, `Érosion` (versants lisses, détail sur les crêtes) et `Déformation` (côtes découpées, chaînes tordues).
+   Le composant `Érosion` (Ajouter un composant) creuse de vraies vallées là où l'eau se rassemble : `Force`, `Pluie`,
+   `Profondeur des vallées` (part du relief), `Pente des versants`, `Mailles pour creuser` (plus haut : moins de petits
+   vallons) et `Finesse de la carte`. Chaque changement refait la carte (quelques secondes, plus d'une minute à
+   1 000 km de rayon), gardée ensuite dans `bin/Cache`.
 7. **Climat.** La température baisse vers les pôles (axe y de la planète) et avec l'altitude (6,5 °C par km).
    L'humidité suit des bandes de latitude comme sur Terre (humide à l'équateur et vers 55°, sec vers 25-30° et aux
    pôles, bords ondulés), autour du réglage de la planète. Ils choisissent la matière du sol (herbe, terre, sable, neige), la roche
@@ -328,10 +332,13 @@ Le plan d'origine est dans `/mnt/project-files/Recherche/relief-planetes-plan.md
   déterministe (même carte sur le client et le serveur, quel que soit le nombre de fils) : creux remplis depuis la mer
   (lacs), plus forte pente, débit cumulé, creusement implicite selon la racine du débit (rien sous quelques mailles
   drainées : crêtes intactes), borné à une part du relief ; versants éboulés jusqu'à une pente donnée, seulement là où
-  le creusement les a raidis (les montagnes gardent leurs pentes). Fait : la carte et ses tests (étape 1). À faire : l'ajouter
-  au relief dans `GetHeight` et `Height` (composant « Érosion »), puis lits des rivières, sol et végétation des berges,
-  puis l'eau des rivières et des lacs. Coût (4 cœurs à 2 GHz) : 0,7 s pour 200 km de rayon, 8 s pour 1 000 km
-  (1 571 mailles par face, les trois quarts pour les hauteurs de départ), environ 0,9 Go le temps du calcul, 130 Mo
-  gardés. Limites : débit sans climat (pluie partout égale) ; l'eau suit une des 8 directions, d'où des bouts de
+  le creusement les a raidis (les montagnes gardent leurs pentes). Fait : la carte et ses tests ; ajoutée au relief
+  (composant « Érosion », `Terrain::GetHeight` et `Height` du GPU). Les points de la carte sont les sommets des tuiles
+  d'un niveau (coutures exactes entre les faces), interpolés en Catmull-Rom (bilinéaire contre les bords des faces) ; le
+  CPU envoie à chaque tuile le creusement de ses 37 x 37 points (`TileGpuInputs::carve`, 15 µs par tuile), le GPU
+  l'ajoute (bilinéaire pour les arbres). Carte calculée sur un fil à part : l'ancien relief reste affiché en attendant.
+  À faire : lits des rivières, sol et végétation des berges, puis l'eau des rivières et des lacs. Coût (4 cœurs à
+  2 GHz) : 0,7 s pour 200 km de rayon (256 mailles par face) ; 1 000 km : 14 s et 0,4 Go à 1 024 mailles (1,5 km),
+  64 s à 2 048 (770 m, réglage par défaut ; le remplissage des creux, sur un seul fil, en prend les deux tiers). Limites : débit sans climat (pluie partout égale) ; l'eau suit une des 8 directions, d'où des bouts de
   rivière droits ; vallées étroites (une à deux mailles).
 - ⬜ 10. Rochers et cailloux posés sur le sol en instancing, plutôt que des octaves toujours plus fines.

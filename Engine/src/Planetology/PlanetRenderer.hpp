@@ -104,7 +104,8 @@ namespace Flux::Planetology {
         // proches de la caméra ou de là où elle va, en vue ou non. Avec `castsShadow`, les tuiles hors
         // du champ dont l'ombre peut y tomber sont ajoutées aussi (Tile::shadowOnly), sans plaines ni calcul en avance :
         // une montagne derrière la caméra, soleil dans le dos.
-        void Collect(Entity entity, const PlanetComponent& planet, const CraterComponent* craters, const Math::Vector3d& position,
+        void Collect(Entity entity, const PlanetComponent& planet, const CraterComponent* craters, const ErosionComponent* erosion,
+                     const Math::Vector3d& position,
                      const Math::Quaternionf& rotation, const ViewTest& inView, std::vector<Tile>& tiles,
                      std::vector<Plain>* plains = nullptr, std::uint32_t plainLevel = 0, double plainRange = 0.0,
                      const ViewTest* castsShadow = nullptr, const ShadowSpacing* shadowSpacing = nullptr);

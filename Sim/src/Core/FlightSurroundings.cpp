@@ -17,6 +17,7 @@ namespace Flux {
         const Math::WorldPosition position = scene.GetWorldPosition(ship);
         const PlanetComponent* nearest = nullptr;
         const CraterComponent* craters = nullptr;
+        const ErosionComponent* erosion = nullptr;
         Math::Vector3d offset{};
         Math::Quaternionf rotation;
         for (const auto [entity, planet] : scene.GetRegistry().view<const PlanetComponent>().each()) {
@@ -27,6 +28,7 @@ namespace Flux {
             if (!nearest || Math::Length(candidate) - planet.radius < Math::Length(offset) - nearest->radius) {
                 nearest = &planet;
                 craters = scene.GetRegistry().try_get<CraterComponent>(entity);
+                erosion = scene.GetRegistry().try_get<ErosionComponent>(entity);
                 offset = candidate;
                 rotation = scene.GetWorldRotation(entity);
             }
@@ -35,7 +37,7 @@ namespace Flux {
         if (!nearest || Math::Length(offset) < 1.0 || Math::Length(offset) > 2.0 * nearest->radius) {
             return flight;
         }
-        const Planetology::ReliefShape shape = Planetology::GetReliefShape(*nearest, craters);
+        const Planetology::ReliefShape shape = Planetology::GetReliefShape(*nearest, craters, erosion);
         const auto same = [&](const Relief& relief) {
             return relief.terrain->GetRadius() == nearest->radius && relief.terrain->GetRelief() == nearest->relief
                 && relief.seed == nearest->seed && relief.shape == shape;
@@ -46,7 +48,11 @@ namespace Flux {
             if (m_reliefs.size() >= MaxReliefs) {
                 m_reliefs.erase(m_reliefs.begin());
             }
-            m_reliefs.push_back({std::make_shared<const Planetology::Terrain>(*nearest, craters), nearest->seed, shape});
+            std::shared_ptr<const Planetology::Terrain> terrain = Planetology::MakeTerrain(*nearest, craters, erosion, false);
+            if (!terrain) {
+                return flight; // carte d'érosion en calcul : l'altitude viendra quand elle sera prête
+            }
+            m_reliefs.push_back({std::move(terrain), nearest->seed, shape});
             found = m_reliefs.end() - 1;
         }
         const Planetology::Terrain* terrain = found->terrain.get();

@@ -188,6 +188,17 @@ namespace Flux {
             .Field("wear", "Usure", &CraterComponent::wear, {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
             .Field("complexRadius", "Fond plat et pic à partir de (m)", &CraterComponent::complexRadius,
                    {.speed = 10.0, .min = 1.0, .max = 1.0e6, .decimals = 0});
+        registry.Register<ErosionComponent>("erosion", "Érosion")
+            .Field("cellSize", "Finesse de la carte (m)", &ErosionComponent::cellSize,
+                   {.speed = 10.0, .min = 100.0, .max = 1.0e5, .decimals = 0})
+            .Field("strength", "Force", &ErosionComponent::strength, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
+            .Field("rain", "Pluie", &ErosionComponent::rain, {.speed = 0.01, .min = 0.0, .max = 10.0, .decimals = 2})
+            .Field("valleyDepth", "Profondeur des vallées (/ relief)", &ErosionComponent::valleyDepth,
+                   {.speed = 0.005, .min = 0.0, .max = 1.0, .decimals = 3})
+            .Field("valleySlope", "Pente des versants (°)", &ErosionComponent::valleySlope,
+                   {.speed = 0.1, .min = 5.0, .max = 50.0, .decimals = 1})
+            .Field("channelArea", "Mailles pour creuser", &ErosionComponent::channelArea,
+                   {.speed = 0.1, .min = 1.0, .max = 1000.0, .decimals = 1});
         registry.Register<CloudsComponent>("clouds", "Nuages")
             .Field("altitude", "Altitude (m)", &CloudsComponent::altitude,
                    {.speed = 10.0, .min = 0.0, .max = 1.0e6, .decimals = 0})

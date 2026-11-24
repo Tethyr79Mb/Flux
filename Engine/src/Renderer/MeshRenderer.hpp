@@ -483,7 +483,8 @@ namespace Flux {
         std::expected<void, std::string> CreatePipelines(RHI::Format colorFormat, RHI::Format motionFormat, RHI::Format depthFormat);
         const Pipelines& GetPipelines(const MeshDraw& draw) const;
         bool GrowBuffer(std::unique_ptr<RHI::Buffer>& buffer, std::uint32_t frameIndex, std::uint32_t slot, std::uint64_t size);
-        void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const CraterComponent* craters, const RimLightComponent* rim,
+        void AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const CraterComponent* craters,
+                       const ErosionComponent* erosion, const RimLightComponent* rim,
                        const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view,
                        const std::filesystem::path& assetsDirectory);
         void PrepareVegetation(const Camera& camera, float aspect, const std::filesystem::path& assetsDirectory,

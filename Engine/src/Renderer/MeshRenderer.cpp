@@ -1045,7 +1045,8 @@ namespace Flux {
         for (const RelativeTransform& transform : m_relativeTransforms) {
             if (const auto* planet = scene.TryGet<PlanetComponent>(transform.entity)) {
                 const Clock::time_point planetStart = Clock::now();
-                AddPlanet(transform, *planet, scene.TryGet<CraterComponent>(transform.entity), scene.TryGet<RimLightComponent>(transform.entity),
+                AddPlanet(transform, *planet, scene.TryGet<CraterComponent>(transform.entity), scene.TryGet<ErosionComponent>(transform.entity),
+                          scene.TryGet<RimLightComponent>(transform.entity),
                           scene.TryGet<CloudsComponent>(transform.entity), scene.TryGet<VegetationComponent>(transform.entity), view,
                           assetsDirectory);
                 groundMilliseconds += since(planetStart);
@@ -1395,7 +1396,8 @@ namespace Flux {
 
     // Tuiles de la planète à dessiner, relatives à la caméra : leur centre est calculé en double (PlanetRenderer), le
     // GPU ne voit que des sommets proches de ce centre.
-    void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const CraterComponent* craters, const RimLightComponent* rim,
+    void MeshRenderer::AddPlanet(const RelativeTransform& transform, const PlanetComponent& planet, const CraterComponent* craters,
+                                 const ErosionComponent* erosion, const RimLightComponent* rim,
                                  const CloudsComponent* clouds, const VegetationComponent* vegetation, const ViewCone& view,
                                  const std::filesystem::path& assetsDirectory) {
         m_planetTiles.clear();
@@ -1424,7 +1426,7 @@ namespace Flux {
         };
         // Portée de la planète (réglage artistique) multipliée par la distance choisie par le joueur.
         const float rangeScale = GetVegetationDistanceScale(m_vegetationDistance);
-        m_planets->Collect(transform.entity, planet, craters, transform.position, transform.rotation,
+        m_planets->Collect(transform.entity, planet, craters, erosion, transform.position, transform.rotation,
                            [&view](const Math::Vector3f& center, float radius) { return view.Contains(center, radius); },
                            m_planetTiles, trees ? &m_plains : nullptr, trees ? Planetology::VegetationRenderer::GetPlainLevel(*known) : 0u,
                            trees ? static_cast<double>(vegetation->range * rangeScale) : 0.0, &castsShadow, &shadowSpacing);

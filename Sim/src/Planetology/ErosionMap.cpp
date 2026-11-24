@@ -2,21 +2,28 @@
 
 #include "Flux/Core/Log.hpp"
 #include "Flux/Planetology/Planet.hpp"
+#include "Flux/Platform/Filesystem.hpp"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <format>
 #include <fstream>
+#include <future>
 #include <limits>
+#include <mutex>
 #include <numbers>
+#include <span>
 #include <system_error>
 #include <thread>
+#include <unordered_map>
 
 namespace Flux::Planetology {
     namespace {
         // Change dès que le calcul change : les cartes en cache d'avant sont alors refaites.
-        constexpr std::uint32_t MethodVersion = 1;
+        constexpr std::uint32_t MethodVersion = 2;
         constexpr std::uint32_t FileMagic = 0x52455846u; // « FXER »
         constexpr double QuarterPi = std::numbers::pi / 4.0;
         // Arrondi des hauteurs de départ (m) : efface l'écart d'exp, pow ou sin d'une bibliothèque à l'autre.
@@ -83,16 +90,21 @@ namespace Flux::Planetology {
         };
     }
 
-    std::uint32_t ErosionMap::GetResolution(const Terrain& terrain, const ErosionSettings& settings) {
+    std::uint32_t ErosionMap::GetLevel(const Terrain& terrain, const ErosionSettings& settings) {
+        // Le niveau dont l'écart des sommets est le plus proche de cellSize (à un facteur √2 près).
         const double faceEdge = 0.5 * std::numbers::pi * terrain.GetRadius();
-        const double cells = std::round(faceEdge / std::max(settings.cellSize, 1.0));
-        return static_cast<std::uint32_t>(std::clamp(cells, 16.0, static_cast<double>(MaxResolution)));
+        const double target = std::max(settings.cellSize, 1.0) * std::numbers::sqrt2;
+        std::uint32_t level = 0;
+        while (level < MaxLevel && faceEdge / static_cast<double>(TileQuads << level) > target) {
+            ++level;
+        }
+        return level;
     }
 
     std::uint64_t ErosionMap::GetKey(const Terrain& terrain, const ErosionSettings& settings) {
         Hash hash;
         hash.Add(MethodVersion);
-        hash.Add(GetResolution(terrain, settings));
+        hash.Add(GetLevel(terrain, settings));
         hash.Add(terrain.GetRadius());
         hash.Add(terrain.GetRelief());
         hash.Bytes(terrain.GetPermutation().data(), terrain.GetPermutation().size());
@@ -118,115 +130,122 @@ namespace Flux::Planetology {
         return hash.value;
     }
 
-    void ErosionMap::SetResolution(std::uint32_t resolution) {
-        const std::uint32_t n = resolution;
+    void ErosionMap::SetLevel(std::uint32_t level) {
+        const std::uint32_t n = TileQuads << level;
+        const std::uint32_t m = n + 1;
+        m_level = level;
         m_resolution = n;
-        m_tangents.resize(n + 2);
-        for (std::uint32_t k = 0; k < n + 2; ++k) {
-            const double s = -1.0 + static_cast<double>(2 * static_cast<std::int64_t>(k) - 1) / static_cast<double>(n);
-            m_tangents[k] = Tangent(s * QuarterPi);
+        m_tangents.resize(m);
+        for (std::uint32_t i = 0; i < m; ++i) {
+            m_tangents[i] = Tangent((-1.0 + 2.0 * static_cast<double>(i) / static_cast<double>(n)) * QuarterPi);
         }
-        // Voisins des bords : d'une face à l'autre, par la direction du point d'à côté. Les mailles de deux faces
-        // tombent face à face le long d'une arête ; seul le coin du cube (trois faces) en perd un.
-        m_borderNeighbors.assign(6ull * 4 * n * 8, NoNode);
-        for (std::uint32_t face = 0; face < 6; ++face) {
-            for (std::uint32_t k = 0; k < n; ++k) {
-                const std::uint32_t cells[4][2] = {{k, 0}, {k, n - 1}, {0, k}, {n - 1, k}};
-                for (const auto& cell : cells) {
-                    const std::uint32_t node = (face * n + cell[1]) * n + cell[0];
-                    std::uint32_t* out = &m_borderNeighbors[8ull * BorderSlot(face, cell[0], cell[1])];
-                    for (int d = 0; d < 8; ++d) {
-                        const std::uint32_t other = ResolveNode(face, static_cast<std::int64_t>(cell[0]) + OffsetI[d],
-                                                                static_cast<std::int64_t>(cell[1]) + OffsetJ[d]);
-                        const bool repeated = other == node || std::find(out, out + d, other) != out + d;
-                        out[d] = repeated ? NoNode : other;
+        // Représentant de chaque point du bord : le plus petit index parmi ses copies, cherchées sur les six faces
+        // (une arête en a deux, un coin trois). La direction du point tombe exactement sur un point de l'autre face.
+        struct Copy
+        {
+            std::uint32_t face, i, j;
+        };
+        std::vector<std::array<Copy, 3>> copies(6ull * 4 * m);
+        std::vector<std::uint8_t> copyCount(6ull * 4 * m, 0);
+        m_borderCanonical.assign(6ull * 4 * m, NoNode);
+        m_borderNeighbors.assign(6ull * 4 * m * 8, NoNode);
+        const auto forEachBorder = [&](const auto& work) {
+            for (std::uint32_t face = 0; face < 6; ++face) {
+                for (std::uint32_t k = 0; k < 4 * m; ++k) {
+                    const std::uint32_t i = k < m ? k : (k < 2 * m ? k - m : (k < 3 * m ? 0 : n));
+                    const std::uint32_t j = k < m ? 0 : (k < 2 * m ? n : k % m);
+                    if (BorderSlot(face, i, j) == face * 4 * m + k) { // un coin n'est vu qu'une fois
+                        work(face, i, j, face * 4 * m + k);
                     }
                 }
             }
-        }
-        // Voisinage symétrique (l'eau doit pouvoir repartir par où on l'a trouvée) : au coin, une case libre
-        // accueille le voisin qui manque, sinon le lien est retiré des deux côtés.
-        const auto neighborsOf = [&](std::uint32_t node) -> std::uint32_t* {
-            const std::uint32_t face = node / (n * n);
-            const std::uint32_t i = node % n;
-            const std::uint32_t j = (node / n) % n;
-            const bool border = i == 0 || j == 0 || i == n - 1 || j == n - 1;
-            return border ? &m_borderNeighbors[8ull * BorderSlot(face, i, j)] : nullptr;
         };
-        for (std::uint32_t face = 0; face < 6; ++face) {
-            for (std::uint32_t k = 0; k < 4 * n; ++k) {
-                const std::uint32_t i = k < 2 * n ? k % n : (k < 3 * n ? 0 : n - 1);
-                const std::uint32_t j = k < n ? 0 : (k < 2 * n ? n - 1 : k % n);
-                if (BorderSlot(face, i, j) != face * 4 * n + k) {
-                    continue; // coin déjà vu sous une autre case
+        forEachBorder([&](std::uint32_t face, std::uint32_t i, std::uint32_t j, std::uint32_t slot) {
+            const Math::Vector3d direction = GetNodeDirection(GetNode(face, i, j));
+            std::uint32_t best = GetNode(face, i, j);
+            for (std::uint32_t other = 0; other < 6 && copyCount[slot] < 3; ++other) {
+                const double along = Math::Dot(direction, GetFaceNormal(other));
+                if (along <= 1.0e-9) {
+                    continue;
                 }
-                const std::uint32_t node = (face * n + j) * n + i;
-                std::uint32_t* mine = &m_borderNeighbors[8ull * (face * 4 * n + k)];
+                const double a = Math::Dot(direction, GetFaceAxisS(other)) / along;
+                const double b = Math::Dot(direction, GetFaceAxisT(other)) / along;
+                if (std::abs(a) > 1.0 + 1.0e-9 || std::abs(b) > 1.0 + 1.0e-9) {
+                    continue;
+                }
+                const double u = (std::atan(a) / QuarterPi + 1.0) * 0.5 * static_cast<double>(n);
+                const double v = (std::atan(b) / QuarterPi + 1.0) * 0.5 * static_cast<double>(n);
+                const auto ci = static_cast<std::uint32_t>(std::clamp(std::llround(u), 0ll, static_cast<long long>(n)));
+                const auto cj = static_cast<std::uint32_t>(std::clamp(std::llround(v), 0ll, static_cast<long long>(n)));
+                copies[slot][copyCount[slot]++] = {other, ci, cj};
+                best = std::min(best, GetNode(other, ci, cj));
+            }
+            m_borderCanonical[slot] = best;
+        });
+        // Voisins d'un représentant : ceux de chacune de ses copies dans leur face, ramenés à leurs représentants.
+        // Le voisinage est ainsi symétrique, d'une face à l'autre comme dans une face.
+        forEachBorder([&](std::uint32_t face, std::uint32_t i, std::uint32_t j, std::uint32_t slot) {
+            const std::uint32_t node = GetNode(face, i, j);
+            if (m_borderCanonical[slot] != node) {
+                return;
+            }
+            std::uint32_t* out = &m_borderNeighbors[8ull * slot];
+            std::uint32_t found = 0;
+            for (std::uint32_t c = 0; c < copyCount[slot]; ++c) {
+                const Copy& copy = copies[slot][c];
                 for (int d = 0; d < 8; ++d) {
-                    if (mine[d] == NoNode) {
+                    const std::int64_t ni = static_cast<std::int64_t>(copy.i) + OffsetI[d];
+                    const std::int64_t nj = static_cast<std::int64_t>(copy.j) + OffsetJ[d];
+                    if (ni < 0 || nj < 0 || ni > n || nj > n) {
                         continue;
                     }
-                    std::uint32_t* theirs = neighborsOf(mine[d]);
-                    if (!theirs || std::find(theirs, theirs + 8, node) != theirs + 8) {
-                        continue; // voisin intérieur (symétrique par construction) ou déjà réciproque
-                    }
-                    std::uint32_t* free = std::find(theirs, theirs + 8, NoNode);
-                    if (free != theirs + 8) {
-                        *free = node;
-                    } else {
-                        mine[d] = NoNode;
+                    const std::uint32_t other = Canonical(copy.face, static_cast<std::uint32_t>(ni), static_cast<std::uint32_t>(nj));
+                    if (other != node && std::find(out, out + found, other) == out + found && found < 8) {
+                        out[found++] = other;
                     }
                 }
             }
-        }
+        });
     }
 
     std::uint32_t ErosionMap::BorderSlot(std::uint32_t face, std::uint32_t i, std::uint32_t j) const {
         const std::uint32_t n = m_resolution;
-        const std::uint32_t k = j == 0 ? i : (j == n - 1 ? n + i : (i == 0 ? 2 * n + j : 3 * n + j));
-        return face * 4 * n + k;
+        const std::uint32_t m = n + 1;
+        const std::uint32_t k = j == 0 ? i : (j == n ? m + i : (i == 0 ? 2 * m + j : 3 * m + j));
+        return face * 4 * m + k;
     }
 
-    std::uint32_t ErosionMap::ResolveNode(std::uint32_t face, std::int64_t i, std::int64_t j) const {
-        const std::int64_t n = m_resolution;
-        if (i >= 0 && j >= 0 && i < n && j < n) {
-            return static_cast<std::uint32_t>((face * n + j) * n + i);
-        }
-        // Le centre d'à côté tombe au centre d'une maille de la face voisine : loin de tout arrondi.
-        const Math::Vector3d direction = Math::Normalize(GetFaceNormal(face) + GetFaceAxisS(face) * m_tangents[static_cast<std::size_t>(i + 1)]
-                                                         + GetFaceAxisT(face) * m_tangents[static_cast<std::size_t>(j + 1)]);
-        std::uint32_t other = 0;
-        double s = 0.0;
-        double t = 0.0;
-        FaceFromDirection(direction, other, s, t);
-        const auto cell = [n](double u) {
-            return std::clamp(static_cast<std::int64_t>(std::floor((u + 1.0) * 0.5 * static_cast<double>(n))), std::int64_t{0}, n - 1);
-        };
-        return static_cast<std::uint32_t>((other * n + cell(t)) * n + cell(s));
+    std::uint32_t ErosionMap::GetCanonical(std::uint32_t node) const {
+        const std::uint32_t m = GetSide();
+        return Canonical(node / (m * m), node % m, (node / m) % m);
     }
 
     Math::Vector3d ErosionMap::GetNodeDirection(std::uint32_t node) const {
-        const std::uint32_t n = m_resolution;
-        const std::uint32_t face = node / (n * n);
-        const std::uint32_t i = node % n;
-        const std::uint32_t j = (node / n) % n;
-        return Math::Normalize(GetFaceNormal(face) + GetFaceAxisS(face) * m_tangents[i + 1] + GetFaceAxisT(face) * m_tangents[j + 1]);
+        const std::uint32_t m = GetSide();
+        const std::uint32_t face = node / (m * m);
+        return Math::Normalize(GetFaceNormal(face) + GetFaceAxisS(face) * m_tangents[node % m]
+                               + GetFaceAxisT(face) * m_tangents[(node / m) % m]);
     }
 
     void ErosionMap::GetNeighbors(std::uint32_t node, std::uint32_t (&neighbors)[8]) const {
         const std::uint32_t n = m_resolution;
-        const std::uint32_t i = node % n;
-        const std::uint32_t j = (node / n) % n;
-        if (i == 0 || j == 0 || i == n - 1 || j == n - 1) {
-            std::memcpy(neighbors, &m_borderNeighbors[8ull * BorderSlot(node / (n * n), i, j)], sizeof(neighbors));
+        const std::uint32_t m = n + 1;
+        const std::uint32_t face = node / (m * m);
+        const std::uint32_t i = node % m;
+        const std::uint32_t j = (node / m) % m;
+        if (IsBorder(i, j)) {
+            std::memcpy(neighbors, &m_borderNeighbors[8ull * BorderSlot(face, i, j)], sizeof(neighbors));
             return;
         }
         for (int d = 0; d < 8; ++d) {
-            neighbors[d] = static_cast<std::uint32_t>(static_cast<std::int64_t>(node) + OffsetI[d] + static_cast<std::int64_t>(OffsetJ[d]) * n);
+            const auto ni = static_cast<std::uint32_t>(static_cast<std::int32_t>(i) + OffsetI[d]);
+            const auto nj = static_cast<std::uint32_t>(static_cast<std::int32_t>(j) + OffsetJ[d]);
+            neighbors[d] = Canonical(face, ni, nj);
         }
     }
 
     std::uint32_t ErosionMap::GetReceiver(std::uint32_t node) const {
+        node = GetCanonical(node);
         const std::uint8_t direction = m_direction[node];
         if (direction == Outlet) {
             return node;
@@ -239,31 +258,42 @@ namespace Flux::Planetology {
     ErosionMap ErosionMap::Build(const Terrain& terrain, const ErosionSettings& settings, unsigned threads) {
         ErosionMap map;
         map.m_key = GetKey(terrain, settings);
-        const std::uint32_t n = GetResolution(terrain, settings);
-        map.SetResolution(n);
-        const std::uint32_t count = 6 * n * n;
+        const std::uint32_t level = GetLevel(terrain, settings);
+        map.SetLevel(level);
+        const std::uint32_t n = map.m_resolution;
+        const std::uint32_t count = 6 * map.GetSide() * map.GetSide();
         threads = threads == 0 ? std::max(1u, std::thread::hardware_concurrency()) : threads;
+        // Les copies d'un point d'arête ne comptent pas : seul son représentant est calculé, puis recopié.
+        std::vector<std::uint8_t> active(count);
+        for (std::uint32_t node = 0; node < count; ++node) {
+            active[node] = map.GetCanonical(node) == node ? 1 : 0;
+        }
 
         // Hauteurs de départ : la formule sans les octaves plus fines que deux mailles (Terrain::GetOctaves du niveau
-        // de tuile au même écart de sommets), arrondies.
-        std::uint32_t level = 0;
-        while ((TileQuads << (level + 1)) <= n) {
-            ++level;
-        }
+        // de tuile dont les sommets sont les points), arrondies.
         const std::uint32_t octaves = terrain.GetOctaves(level);
         // En float : un multiple de 1/16 m y est exact jusqu'à 1 000 km.
         std::vector<float> start(count);
         ParallelRange(count, threads, [&](std::uint32_t begin, std::uint32_t end) {
             for (std::uint32_t node = begin; node < end; ++node) {
-                start[node] = static_cast<float>(std::nearbyint(terrain.GetHeight(map.GetNodeDirection(node), octaves) / HeightStep) * HeightStep);
+                if (!active[node]) {
+                    continue;
+                }
+                start[node] = static_cast<float>(std::nearbyint(terrain.GetReliefHeight(map.GetNodeDirection(node), octaves) / HeightStep) * HeightStep);
             }
         });
+        for (std::uint32_t node = 0; node < count; ++node) {
+            start[node] = start[map.GetCanonical(node)];
+        }
 
         const double sea = settings.sea ? settings.seaHeight : -std::numeric_limits<double>::infinity();
         std::vector<std::uint8_t> fixed(count, 0);
         std::uint32_t lowest = 0;
         bool anySea = false;
         for (std::uint32_t node = 0; node < count; ++node) {
+            if (!active[node]) {
+                continue;
+            }
             fixed[node] = start[node] < sea ? 1 : 0;
             anySea = anySea || fixed[node] != 0;
             lowest = start[node] < start[lowest] ? node : lowest;
@@ -278,6 +308,7 @@ namespace Flux::Planetology {
         const double rain = std::max(settings.rain, 1.0e-3);
         const double slope = Tangent(std::clamp(settings.valleySlope, 5.0, 50.0) * (std::numbers::pi / 180.0));
         const double cellSize = 0.5 * std::numbers::pi * terrain.GetRadius() / static_cast<double>(n);
+        map.m_depth = deepest;
 
         std::vector<double> height(start.begin(), start.end());
         std::vector<double> slumped(count);
@@ -293,6 +324,7 @@ namespace Flux::Planetology {
         std::vector<std::uint32_t> bucketHead;
         std::vector<std::uint32_t> bucketTail;
         std::vector<std::uint32_t> pit;
+        std::uint32_t size = 0; // points rangés dans stack (les représentants)
 
         const std::uint32_t passes = std::max(settings.iterations, 1u);
         for (std::uint32_t pass = 0; pass < passes; ++pass) {
@@ -323,7 +355,9 @@ namespace Flux::Planetology {
                     }
                     bucketTail[bucket] = node;
                 };
-                std::fill(visited.begin(), visited.end(), std::uint8_t{0});
+                for (std::uint32_t node = 0; node < count; ++node) {
+                    visited[node] = active[node] ? 0 : 1;
+                }
                 pit.clear();
                 for (std::uint32_t node = 0; node < count; ++node) {
                     if (fixed[node]) {
@@ -377,7 +411,8 @@ namespace Flux::Planetology {
                 // nominal des mailles), puis la vraie distance jusqu'à lui.
                 ParallelRange(count, threads, [&](std::uint32_t begin, std::uint32_t end) {
                     for (std::uint32_t node = begin; node < end; ++node) {
-                        if (fixed[node]) {
+                        if (fixed[node] || !active[node]) {
+                            receiver[node] = active[node] ? receiver[node] : node;
                             distance[node] = 1.0f;
                             continue;
                         }
@@ -420,9 +455,9 @@ namespace Flux::Planetology {
                         }
                     }
                 }
-                std::uint32_t size = 0;
+                size = 0;
                 for (std::uint32_t node = 0; node < count; ++node) {
-                    if (receiver[node] == node) {
+                    if (active[node] && receiver[node] == node) {
                         stack[size++] = node;
                     }
                 }
@@ -435,7 +470,7 @@ namespace Flux::Planetology {
 
                 // 4. Débit : chaque maille reçoit la pluie de tout son amont.
                 std::fill(flow.begin(), flow.end(), static_cast<float>(rain));
-                for (std::uint32_t k = count; k-- > 0;) {
+                for (std::uint32_t k = size; k-- > 0;) {
                     const std::uint32_t node = stack[k];
                     if (receiver[node] != node) {
                         flow[receiver[node]] += flow[node];
@@ -447,7 +482,7 @@ namespace Flux::Planetology {
             // rejoint son receveur d'autant plus vite que son débit est fort. Sous channelArea mailles drainées, rien
             // (les crêtes et les sommets restent tels que la formule les fait). Dans un lac (plus bas que la sortie),
             // rien non plus.
-            for (std::uint32_t k = 0; k < count; ++k) {
+            for (std::uint32_t k = 0; k < size; ++k) {
                 const std::uint32_t node = stack[k];
                 const std::uint32_t down = receiver[node];
                 if (down == node || height[node] <= height[down]) {
@@ -466,7 +501,7 @@ namespace Flux::Planetology {
             ParallelRange(count, threads, [&](std::uint32_t begin, std::uint32_t end) {
                 for (std::uint32_t node = begin; node < end; ++node) {
                     double h = height[node];
-                    if (fixed[node]) {
+                    if (fixed[node] || !active[node]) {
                         slumped[node] = h;
                         continue;
                     }
@@ -493,6 +528,9 @@ namespace Flux::Planetology {
         map.m_flow = std::move(flow);
         map.m_direction.resize(count);
         for (std::uint32_t node = 0; node < count; ++node) {
+            if (!active[node]) {
+                continue;
+            }
             map.m_carve[node] = static_cast<float>(height[node] - static_cast<double>(start[node]));
             std::uint8_t direction = Outlet;
             if (receiver[node] != node) {
@@ -502,7 +540,141 @@ namespace Flux::Planetology {
             }
             map.m_direction[node] = direction;
         }
+        for (std::uint32_t node = 0; node < count; ++node) {
+            const std::uint32_t canonical = map.GetCanonical(node);
+            map.m_carve[node] = map.m_carve[canonical];
+            map.m_flow[node] = map.m_flow[canonical];
+            map.m_direction[node] = map.m_direction[canonical];
+        }
         return map;
+    }
+
+    double ErosionMap::SampleFace(std::uint32_t face, double u, double v) const {
+        const std::uint32_t n = m_resolution;
+        const std::uint32_t m = n + 1;
+        const float* data = &m_carve[static_cast<std::size_t>(face) * m * m];
+        const double size = static_cast<double>(n);
+        u = std::clamp(u, 0.0, size);
+        v = std::clamp(v, 0.0, size);
+        const auto i0 = static_cast<std::uint32_t>(std::min(std::floor(u), size - 1.0));
+        const auto j0 = static_cast<std::uint32_t>(std::min(std::floor(v), size - 1.0));
+        const double fu = u - static_cast<double>(i0);
+        const double fv = v - static_cast<double>(j0);
+        const auto at = [&](std::uint32_t i, std::uint32_t j) { return static_cast<double>(data[j * m + i]); };
+        const double bilinear = (at(i0, j0) * (1.0 - fu) + at(i0 + 1, j0) * fu) * (1.0 - fv)
+                              + (at(i0, j0 + 1) * (1.0 - fu) + at(i0 + 1, j0 + 1) * fu) * fv;
+        // Distance au bord de la face (en mailles) : bilinéaire sur la première maille, Catmull-Rom à partir de la
+        // deuxième (ses 4 x 4 points restent alors dans la face).
+        const double edge = std::min({u, size - u, v, size - v});
+        const double x = std::clamp(edge - 1.0, 0.0, 1.0);
+        const double blend = x * x * (3.0 - 2.0 * x);
+        double carve = bilinear;
+        if (blend > 0.0) {
+            const auto weights = [](double t, double (&w)[4]) {
+                const double t2 = t * t;
+                const double t3 = t2 * t;
+                w[0] = 0.5 * (-t3 + 2.0 * t2 - t);
+                w[1] = 0.5 * (3.0 * t3 - 5.0 * t2 + 2.0);
+                w[2] = 0.5 * (-3.0 * t3 + 4.0 * t2 + t);
+                w[3] = 0.5 * (t3 - t2);
+            };
+            double wu[4];
+            double wv[4];
+            weights(fu, wu);
+            weights(fv, wv);
+            double cubic = 0.0;
+            for (std::uint32_t b = 0; b < 4; ++b) {
+                double row = 0.0;
+                for (std::uint32_t a = 0; a < 4; ++a) {
+                    row += wu[a] * at(i0 + a - 1, j0 + b - 1);
+                }
+                cubic += wv[b] * row;
+            }
+            carve = bilinear + (cubic - bilinear) * blend;
+        }
+        return std::clamp(carve, -m_depth, 0.0);
+    }
+
+    void ErosionMap::SampleGrid(std::uint32_t face, std::span<const double> u, std::span<const double> v, float* out) const {
+        // Comme SampleFace en chaque point, mais Catmull-Rom séparable loin des bords (deux mailles et plus) : les
+        // quatre rangées de points d'une ligne sont combinées une fois pour toutes ses colonnes.
+        const std::uint32_t n = m_resolution;
+        const std::uint32_t m = n + 1;
+        const double size = static_cast<double>(n);
+        const float* data = &m_carve[static_cast<std::size_t>(face) * m * m];
+        const auto weights = [](double t, std::array<double, 4>& w) {
+            const double t2 = t * t;
+            const double t3 = t2 * t;
+            w = {0.5 * (-t3 + 2.0 * t2 - t), 0.5 * (3.0 * t3 - 5.0 * t2 + 2.0), 0.5 * (-3.0 * t3 + 4.0 * t2 + t), 0.5 * (t3 - t2)};
+        };
+        thread_local std::vector<std::uint32_t> columns;
+        thread_local std::vector<std::array<double, 4>> columnWeights;
+        thread_local std::vector<double> rows;
+        columns.resize(u.size());
+        columnWeights.resize(u.size());
+        std::uint32_t first = m;
+        std::uint32_t last = 0;
+        for (std::size_t i = 0; i < u.size(); ++i) {
+            const double x = std::clamp(u[i], 0.0, size);
+            columns[i] = static_cast<std::uint32_t>(std::min(std::floor(x), size - 1.0));
+            weights(x - static_cast<double>(columns[i]), columnWeights[i]);
+            if (u[i] >= 2.0 && u[i] <= size - 2.0) {
+                first = std::min(first, columns[i] - 1);
+                last = std::max(last, columns[i] + 2);
+            }
+        }
+        rows.resize(first <= last ? last - first + 1 : 0);
+        for (std::size_t j = 0; j < v.size(); ++j) {
+            if (v[j] < 0.0 || v[j] > size) {
+                continue;
+            }
+            const auto j0 = static_cast<std::uint32_t>(std::min(std::floor(v[j]), size - 1.0));
+            std::array<double, 4> wv;
+            weights(v[j] - static_cast<double>(j0), wv);
+            const bool inner = v[j] >= 2.0 && v[j] <= size - 2.0;
+            if (inner) {
+                for (std::uint32_t x = first; x <= last && first <= last; ++x) {
+                    double sum = 0.0;
+                    for (std::uint32_t b = 0; b < 4; ++b) {
+                        sum += wv[b] * static_cast<double>(data[(j0 + b - 1) * m + x]);
+                    }
+                    rows[x - first] = sum;
+                }
+            }
+            for (std::size_t i = 0; i < u.size(); ++i) {
+                if (u[i] < 0.0 || u[i] > size) {
+                    continue;
+                }
+                if (!inner || u[i] < 2.0 || u[i] > size - 2.0) {
+                    out[j * u.size() + i] = static_cast<float>(SampleFace(face, u[i], v[j]));
+                    continue;
+                }
+                const double* row = &rows[columns[i] - 1 - first];
+                const std::array<double, 4>& wu = columnWeights[i];
+                const double carve = wu[0] * row[0] + wu[1] * row[1] + wu[2] * row[2] + wu[3] * row[3];
+                out[j * u.size() + i] = static_cast<float>(std::clamp(carve, -m_depth, 0.0));
+            }
+        }
+    }
+
+    void ErosionMap::Locate(const Math::Vector3d& direction, std::uint32_t& face, double& u, double& v) const {
+        double s = 0.0;
+        double t = 0.0;
+        FaceFromDirection(direction, face, s, t);
+        const double size = static_cast<double>(m_resolution);
+        u = std::clamp((s + 1.0) * 0.5 * size, 0.0, size);
+        v = std::clamp((t + 1.0) * 0.5 * size, 0.0, size);
+    }
+
+    double ErosionMap::GetCarve(const Math::Vector3d& direction) const {
+        if (IsEmpty()) {
+            return 0.0;
+        }
+        std::uint32_t face = 0;
+        double u = 0.0;
+        double v = 0.0;
+        Locate(direction, face, u, v);
+        return SampleFace(face, u, v);
     }
 
     ErosionMap::Sample ErosionMap::Get(const Math::Vector3d& direction) const {
@@ -510,22 +682,19 @@ namespace Flux::Planetology {
             return {};
         }
         std::uint32_t face = 0;
-        double s = 0.0;
-        double t = 0.0;
-        FaceFromDirection(direction, face, s, t);
-        const double n = static_cast<double>(m_resolution);
-        const double u = std::clamp((s + 1.0) * 0.5 * n - 0.5, -1.0, n);
-        const double v = std::clamp((t + 1.0) * 0.5 * n - 0.5, -1.0, n);
-        const std::int64_t i = std::min(static_cast<std::int64_t>(std::floor(u)), static_cast<std::int64_t>(m_resolution) - 1);
-        const std::int64_t j = std::min(static_cast<std::int64_t>(std::floor(v)), static_cast<std::int64_t>(m_resolution) - 1);
-        const double fu = u - static_cast<double>(i);
-        const double fv = v - static_cast<double>(j);
+        double u = 0.0;
+        double v = 0.0;
+        Locate(direction, face, u, v);
         Sample sample;
-        for (int k = 0; k < 4; ++k) {
-            const std::uint32_t node = ResolveNode(face, i + (k & 1), j + (k >> 1));
+        sample.carve = SampleFace(face, u, v);
+        const double size = static_cast<double>(m_resolution);
+        const auto i0 = static_cast<std::uint32_t>(std::min(std::floor(u), size - 1.0));
+        const auto j0 = static_cast<std::uint32_t>(std::min(std::floor(v), size - 1.0));
+        const double fu = u - static_cast<double>(i0);
+        const double fv = v - static_cast<double>(j0);
+        for (std::uint32_t k = 0; k < 4; ++k) {
             const double w = ((k & 1) ? fu : 1.0 - fu) * ((k >> 1) ? fv : 1.0 - fv);
-            sample.carve += w * m_carve[node];
-            sample.flow += w * m_flow[node];
+            sample.flow += w * m_flow[GetNode(face, i0 + (k & 1), j0 + (k >> 1))];
         }
         return sample;
     }
@@ -541,7 +710,8 @@ namespace Flux::Planetology {
             const std::uint32_t header[2] = {FileMagic, MethodVersion};
             out.write(reinterpret_cast<const char*>(header), sizeof(header));
             out.write(reinterpret_cast<const char*>(&m_key), sizeof(m_key));
-            out.write(reinterpret_cast<const char*>(&m_resolution), sizeof(m_resolution));
+            out.write(reinterpret_cast<const char*>(&m_level), sizeof(m_level));
+            out.write(reinterpret_cast<const char*>(&m_depth), sizeof(m_depth));
             out.write(reinterpret_cast<const char*>(m_carve.data()), static_cast<std::streamsize>(m_carve.size() * sizeof(float)));
             out.write(reinterpret_cast<const char*>(m_flow.data()), static_cast<std::streamsize>(m_flow.size() * sizeof(float)));
             out.write(reinterpret_cast<const char*>(m_direction.data()), static_cast<std::streamsize>(m_direction.size()));
@@ -561,15 +731,17 @@ namespace Flux::Planetology {
         }
         std::uint32_t header[2] = {};
         std::uint64_t storedKey = 0;
-        std::uint32_t resolution = 0;
+        std::uint32_t level = 0;
+        double depth = 0.0;
         in.read(reinterpret_cast<char*>(header), sizeof(header));
         in.read(reinterpret_cast<char*>(&storedKey), sizeof(storedKey));
-        in.read(reinterpret_cast<char*>(&resolution), sizeof(resolution));
-        if (!in || header[0] != FileMagic || header[1] != MethodVersion || storedKey != key || resolution < 16
-            || resolution > MaxResolution) {
+        in.read(reinterpret_cast<char*>(&level), sizeof(level));
+        in.read(reinterpret_cast<char*>(&depth), sizeof(depth));
+        if (!in || header[0] != FileMagic || header[1] != MethodVersion || storedKey != key || level > MaxLevel || !(depth >= 0.0)) {
             return false;
         }
-        const std::size_t count = 6ull * resolution * resolution;
+        const std::size_t side = (TileQuads << level) + 1;
+        const std::size_t count = 6 * side * side;
         std::vector<float> carve(count);
         std::vector<float> flow(count);
         std::vector<std::uint8_t> direction(count);
@@ -579,8 +751,9 @@ namespace Flux::Planetology {
         if (!in || in.peek() != std::ifstream::traits_type::eof()) {
             return false;
         }
-        SetResolution(resolution);
+        SetLevel(level);
         m_key = key;
+        m_depth = depth;
         m_carve = std::move(carve);
         m_flow = std::move(flow);
         m_direction = std::move(direction);
@@ -605,5 +778,62 @@ namespace Flux::Planetology {
             Log::Warning("Érosion : impossible d'enregistrer la carte dans {}", file.string());
         }
         return map;
+    }
+
+    namespace {
+        // Cartes demandées par Request, partagées par la simulation et le rendu (comme un cache d'assets) : la même
+        // planète n'est calculée qu'une fois.
+        struct Requests
+        {
+            struct Entry
+            {
+                std::shared_future<std::shared_ptr<const ErosionMap>> map;
+                std::uint64_t last = 0;
+            };
+            std::mutex mutex;
+            std::unordered_map<std::uint64_t, Entry> entries;
+            std::uint64_t clock = 0;
+        };
+        Requests& GetRequests() {
+            static Requests requests;
+            return requests;
+        }
+        constexpr std::size_t KeptMaps = 4;
+    }
+
+    std::shared_ptr<const ErosionMap> ErosionMap::Request(const Terrain& terrain, const ErosionSettings& settings, bool wait) {
+        const std::uint64_t key = GetKey(terrain, settings);
+        Requests& requests = GetRequests();
+        std::shared_future<std::shared_ptr<const ErosionMap>> map;
+        {
+            std::lock_guard lock(requests.mutex);
+            auto [entry, added] = requests.entries.try_emplace(key);
+            if (added) {
+                entry->second.map = std::async(std::launch::async, [terrain, settings] {
+                    return std::make_shared<const ErosionMap>(
+                        LoadOrBuild(terrain, settings, Platform::GetExecutableDirectory() / "Cache"));
+                }).share();
+            }
+            entry->second.last = ++requests.clock;
+            map = entry->second.map;
+            // Au-delà de KeptMaps, la plus ancienne prête est oubliée (ceux qui l'utilisent la gardent).
+            while (requests.entries.size() > KeptMaps) {
+                auto oldest = requests.entries.end();
+                for (auto it = requests.entries.begin(); it != requests.entries.end(); ++it) {
+                    const bool ready = it->second.map.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+                    if (it->first != key && ready && (oldest == requests.entries.end() || it->second.last < oldest->second.last)) {
+                        oldest = it;
+                    }
+                }
+                if (oldest == requests.entries.end()) {
+                    break;
+                }
+                requests.entries.erase(oldest);
+            }
+        }
+        if (wait || map.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            return map.get();
+        }
+        return nullptr;
     }
 }

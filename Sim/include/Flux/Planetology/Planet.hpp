@@ -3,9 +3,11 @@
 #include "Flux/Assets/Model.hpp"
 #include "Flux/SimExport.hpp"
 #include "Flux/Math/Vector3.hpp"
+#include "Flux/Planetology/ErosionMap.hpp"
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 // Planète en cube-sphère : un cube dont chaque face est une grille, poussée sur la sphère. Chaque face est un arbre
@@ -16,6 +18,7 @@
 namespace Flux {
     struct PlanetComponent;
     struct CraterComponent;
+    struct ErosionComponent;
 }
 
 namespace Flux::Planetology {
@@ -104,13 +107,19 @@ namespace Flux::Planetology {
         double erosion = 1.0;         // force de l'érosion (versants lisses, détail sur les crêtes)
         double warp = 1.0;            // déformation (côtes découpées, chaînes tordues)
         CraterShape craters;
+        // Carte d'érosion (ErosionComponent) : vallées creusées par l'eau, ajoutées par MakeTerrain.
+        bool eroded = false;
+        ErosionSettings valleys;
 
         bool operator==(const ReliefShape&) const = default;
     };
-    // Les réglages du relief d'une planète, avec ses cratères s'il en a (composant de la même entité).
-    FLUX_SIM_API ReliefShape GetReliefShape(const PlanetComponent& planet, const CraterComponent* craters = nullptr);
-    // Profondeur (m) que ses cratères peuvent ajouter sous le relief d'une planète, au plus (Terrain::GetCraterDepth).
-    FLUX_SIM_API double GetCraterDepth(const PlanetComponent& planet, const CraterComponent* craters);
+    // Les réglages du relief d'une planète, avec ses cratères et son érosion s'il en a (composants de la même entité).
+    FLUX_SIM_API ReliefShape GetReliefShape(const PlanetComponent& planet, const CraterComponent* craters = nullptr,
+                                            const ErosionComponent* erosion = nullptr);
+    // Profondeur (m) que ses cratères et son érosion peuvent ajouter sous le relief d'une planète, au plus
+    // (Terrain::GetCraterDepth + Terrain::GetErosionDepth).
+    FLUX_SIM_API double GetCraterDepth(const PlanetComponent& planet, const CraterComponent* craters,
+                                       const ErosionComponent* erosion = nullptr);
 
     // Forme du terrain : rayon, relief (bruit fractal évalué sur la direction 3D, donc sans couture entre les faces),
     // le même pour une même graine.
@@ -129,6 +138,11 @@ namespace Flux::Planetology {
         // cratères. Le relief va de -GetRelief() - GetCraterDepth() à GetRelief() + GetCraterRise().
         double GetCraterDepth() const { return m_craterDepth; }
         double GetCraterRise() const { return m_craterRise; }
+        // Carte d'érosion ajoutée au relief (nullptr : aucune) et ce qu'elle creuse au plus (m, positif) : le relief va
+        // aussi jusqu'à GetErosionDepth() plus bas.
+        void SetErosion(std::shared_ptr<const ErosionMap> erosion);
+        const ErosionMap* GetErosion() const { return m_erosion.get(); }
+        double GetErosionDepth() const { return m_erosion ? m_erosion->GetDepth() : 0.0; }
         // Niveau le plus fin utile : environ un mètre et demi entre deux sommets.
         std::uint32_t GetMaxLevel() const { return m_maxLevel; }
         // Octaves du bruit pour une tuile de ce niveau : celles dont le détail est plus grand que l'écart de ses
@@ -142,8 +156,10 @@ namespace Flux::Planetology {
             double mountains = 0.0;
         };
         // Hauteur au-dessus du rayon (m, de -relief à +relief environ) dans cette direction (unitaire) ; zones : celles
-        // du point, si demandées.
+        // du point, si demandées. Avec la carte d'érosion s'il y en a une.
         double GetHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones = nullptr) const;
+        // La même sans la carte d'érosion : le relief en formule seul (départ de la carte, humidité du relief).
+        double GetReliefHeight(const Math::Vector3d& direction, std::uint32_t octaves, Zones* zones = nullptr) const;
         // Points déformés où GetHeight lit ses couches : `large` (grandes formes, ravines), `small` (sommets, collines).
         struct WarpedPoints
         {
@@ -225,7 +241,13 @@ namespace Flux::Planetology {
         double m_craterRise = 0.0;
         ShapeConstants m_shape{};
         std::array<std::uint8_t, 512> m_permutation{};
+        std::shared_ptr<const ErosionMap> m_erosion;
     };
+
+    // Terrain d'une planète, avec ses cratères et son érosion. La carte d'érosion se relit ou se calcule sur un fil à
+    // part (ErosionMap::Request) : nullptr tant qu'elle n'est pas prête, sauf avec wait. Sans érosion : tout de suite.
+    FLUX_SIM_API std::shared_ptr<const Terrain> MakeTerrain(const PlanetComponent& planet, const CraterComponent* craters,
+                                                            const ErosionComponent* erosion, bool wait);
 
     // Distance (de la caméra à la sphère englobante d'une tuile) en deçà de laquelle une tuile de ce niveau est coupée
     // en 4. La même pour toutes les tuiles d'un niveau (la projection tangente donne le même angle à toutes les
@@ -290,7 +312,7 @@ namespace Flux::Planetology {
         std::array<float, 4> axisT{};  // xyz : axe t ; w : profondeur des jupes
         std::array<std::uint32_t, 4> options{}; // x : octaves ; y : octaves de la parente ; z : niveau ; w : décalages des octaves (GetScaleShift | GetZoneShift << 8 | GetContinentShift << 16 | GetCraterShift << 24)
         // Humidité du relief (GetWetnessLayout) : x : octaves ; y : mailles de la grille par côté (0 : aucune) ; z : fondu
-        // (bits d'un float).
+        // (bits d'un float) ; w : 1 si carve porte le creusement de l'érosion.
         std::array<std::uint32_t, 4> wetness{};
         // Terrain::ShapeConstants : (chainStart, chainEnd, hillStart, hillEnd), (detailPlains, detailHills,
         // detailMountains, hillWeight), (gullyAmplitude, erosion, warpLarge, warpSmall), (peakChance, craterChance,
@@ -301,8 +323,13 @@ namespace Flux::Planetology {
         std::array<std::array<std::int32_t, 4>, Octaves> cells{}; // xyz : point du réseau (0 à 255)
         std::array<std::array<float, 4>, Octaves> fractions{};    // xyz : position dans la maille ; w : fréquence
         std::array<std::uint32_t, 128> permutation{};             // 512 octets, 4 par entier
+        // Creusement de la carte d'érosion (m) aux points (i - 2, j - 2) de la grille, i et j de 0 à Columns - 1, si
+        // wetness.w vaut 1 : calculé ici comme Terrain::GetHeight le fait, le GPU n'a qu'à l'ajouter (ou l'interpoler
+        // en bilinéaire entre les sommets pour les arbres). Trois de plus : la taille reste un multiple de 16 octets.
+        std::array<float, Columns * Columns + 3> carve{};
     };
-    static_assert(sizeof(TileGpuInputs) == 96 + 80 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512);
+    static_assert(sizeof(TileGpuInputs) == 96 + 80 + 16 * (TileGpuInputs::Columns + 2 * TileGpuInputs::Octaves) + 512
+                                               + 4 * (TileGpuInputs::Columns * TileGpuInputs::Columns + 3));
     FLUX_SIM_API void PrepareTileGpu(const Terrain& terrain, TileKey key, TileGpuInputs& inputs);
 
     // Surface seule d'une tuile, pour la collision : ses TileSide x TileSide sommets (sans jupe, normales ni

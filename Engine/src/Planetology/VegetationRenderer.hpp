@@ -296,7 +296,7 @@ namespace Flux::Planetology {
         std::vector<RHI::DrawIndexedCommand> m_commands;
         std::vector<CullCell> m_cells;
         std::vector<TreeJob> m_jobs;
-        TileGpuInputs m_inputs; // 2,5 Ko : pas sur la pile
+        TileGpuInputs m_inputs; // 8 Ko : pas sur la pile
         Stats m_stats;
     };
 }
