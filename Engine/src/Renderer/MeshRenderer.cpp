@@ -19,6 +19,7 @@
 #include <numbers>
 #include <array>
 #include <span>
+#include <utility>
 
 namespace Flux {
     // Champ de la caméra (à l'origine : positions relatives à la caméra), calculé une fois par image.
@@ -2433,6 +2434,12 @@ namespace Flux {
         m_modelBatches.clear();
         m_modelPasses = {};
         std::array<std::size_t, ModelPassCount + 1> passStarts{};
+        using Clock = std::chrono::steady_clock;
+        Clock::time_point partStart = Clock::now();
+        const auto lap = [&partStart] {
+            const Clock::time_point now = Clock::now();
+            return std::chrono::duration<double, std::milli>(now - std::exchange(partStart, now)).count();
+        };
 
         passStarts[OpaqueModelPass] = m_modelBatches.size();
         for (const std::uint32_t d : m_opaque) {
@@ -2463,6 +2470,7 @@ namespace Flux {
             }
         }
         AddBatches(true, m_occlusionActive);
+        m_prepareTimes.opaqueBatches = lap();
 
         // Transparents : dans leur ordre (de loin à près), une commande par entité. Double face : les faces arrière
         // (le fond de l'objet) d'abord, puis les faces avant par-dessus ; exact pour une forme convexe (bulle de
@@ -2500,12 +2508,18 @@ namespace Flux {
         // de l'intérieur). Les transparents laissent passer la lumière (ni ombre colorée ni ombre partielle). Le
         // matériau n'y sert pas (sauf seuil d'alpha) : les primitives d'ombre réunissent ceux d'un même bloc
         // (PrepareModel), le plus souvent un seul appel par modèle.
+        lap(); // transparents : peu nombreux, comptés avec la fin
         for (std::uint32_t c = 0; c < ShadowCascadeCount; ++c) {
             passStarts[2 + c] = m_modelBatches.size();
             for (std::uint32_t d = 0; d < m_draws.size(); ++d) {
                 const MeshDraw& draw = m_draws[d];
                 // Le niveau qui part d'un fondu n'a pas d'ombre : celle du niveau qui arrive suffit.
                 if (draw.fade < 0.0f || !CastsShadow(draw.center, draw.radius, c)) {
+                    continue;
+                }
+                // Toute son ombre vient des rayons : rien à parcourir. Une station découpée en milliers de blocs les
+                // passait sinon un à un dans chacune des quatre cascades, pour n'en garder aucun.
+                if (m_rayShadowsActive && draw.traced && !draw.model->maskedShadows) {
                     continue;
                 }
                 const Pipelines& pipelines = GetPipelines(draw);
@@ -2528,6 +2542,7 @@ namespace Flux {
             }
             AddBatches(false, false); // le test ne vaut que pour la vue de la caméra
         }
+        m_prepareTimes.shadowBatches = lap();
         // Capture d'une sonde de reflets : les opaques autour d'elle, entiers (ni blocs écartés ni test des cachés, qui
         // valent pour la caméra). Les transparents n'y sont pas.
         passStarts[ProbeModelPass] = m_modelBatches.size();

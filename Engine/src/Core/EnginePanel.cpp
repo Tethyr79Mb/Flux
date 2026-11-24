@@ -93,6 +93,8 @@ namespace Flux {
                 ui.LabelText("  données de l'image", std::format("{:.3f} ms", stats.Get(PrepareUploadDataCost)));
                 ui.LabelText("  commandes des tuiles", std::format("{:.3f} ms", stats.Get(PrepareTileCommandsCost)));
                 ui.LabelText("  lots des modèles", std::format("{:.3f} ms", stats.Get(PrepareModelBatchesCost)));
+                ui.LabelText("    opaques", std::format("{:.3f} ms", stats.Get(PrepareOpaqueBatchesCost)));
+                ui.LabelText("    ombres", std::format("{:.3f} ms", stats.Get(PrepareShadowBatchesCost)));
             }
 
             // Temps CPU d'enregistrement de chaque passe (moyenne glissante), sur le fil qui l'a faite : la somme dépasse
@@ -213,7 +215,9 @@ namespace Flux {
                                          {"uploadsMs", stats.Get(PrepareUploadsCost)},
                                          {"uploadDataMs", stats.Get(PrepareUploadDataCost)},
                                          {"tileCommandsMs", stats.Get(PrepareTileCommandsCost)},
-                                         {"modelBatchesMs", stats.Get(PrepareModelBatchesCost)}}},
+                                         {"modelBatchesMs", stats.Get(PrepareModelBatchesCost)},
+                                         {"opaqueBatchesMs", stats.Get(PrepareOpaqueBatchesCost)},
+                                         {"shadowBatchesMs", stats.Get(PrepareShadowBatchesCost)}}},
                        {"recordMs", stats.Get(RecordCost)},
                        {"waitGpuMs", stats.Get(WaitGpuCost)},
                        {"waitScreenMs", stats.Get(WaitImageCost)}};

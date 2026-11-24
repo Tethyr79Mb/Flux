@@ -46,6 +46,8 @@ namespace Flux {
         PrepareUploadDataCost,
         PrepareTileCommandsCost,
         PrepareModelBatchesCost,
+        PrepareOpaqueBatchesCost,
+        PrepareShadowBatchesCost,
         CostCount,
     };
 

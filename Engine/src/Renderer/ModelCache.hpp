@@ -91,6 +91,9 @@ namespace Flux {
         std::vector<Math::Box3f> clusters;            // ModelData::clusters ; vide : un seul bloc
         Math::Box3f bounds;
         bool animated = false; // page de modèles animés : os et poids (ModelSkinVertex) à côté des sommets
+        // Une primitive d'ombre (à un niveau quelconque) a un seuil d'alpha : son ombre reste dans les cartes même
+        // quand le ray tracing fait les autres. Sans, un modèle tracé saute les cascades sans parcourir ses blocs.
+        bool maskedShadows = false;
         // Ray tracing (RHI::Device::HasRayTracing), modèles fixes : structure de ses triangles qui portent une ombre,
         // construite par RayTracingScene à la première image où le modèle est dans la scène (bottomLevelBuilt).
         std::unique_ptr<RHI::AccelerationStructure> bottomLevel;
