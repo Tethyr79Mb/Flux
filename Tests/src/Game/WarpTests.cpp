@@ -152,6 +152,37 @@ namespace {
     }
 }
 
+// Fin du warp, de toutes les directions, vers une station loin de l'origine de son secteur (comme celle d'Espace) :
+// la dernière image vise la sortie pile, et l'arrondi l'en laissait parfois à 1e-12 m. Le vaisseau restait en warp à
+// vitesse nulle, sans plus répondre aux commandes (bug du 2026-11-24).
+static bool RunWarpArrivalTests() {
+    const Math::WorldPosition far{{150, 0, 0}, {-400813269.3, 3072.4, 6321.7}};
+    for (int i = 0; i < 64; ++i) {
+        Scene scene;
+        const Entity station = AddStation(scene, far);
+        const Entity fighter = AddFighter(scene);
+        // Directions réparties sur la sphère (spirale de Fibonacci), à 30 km de la station.
+        const double y = 1.0 - (i + 0.5) / 32.0;
+        const double angle = i * 2.399963229728653;
+        const double ring = std::sqrt(1.0 - y * y);
+        Math::WorldPosition start = far;
+        start += Math::Vector3d{ring * std::cos(angle), y, ring * std::sin(angle)} * (30000.0 + i * 7.3);
+        scene.Get<TransformComponent>(fighter).position = start.offset;
+        scene.Add<SectorComponent>(fighter, start.sector);
+        CHECK(Warp::Engage(scene, fighter, {station, far, Warp::StationExit}) == Warp::EngageResult::Started);
+        double seconds = 0.0;
+        while (scene.Get<WarpDriveComponent>(fighter).stage != WarpStage::Off && seconds < 30.0) {
+            Warp::Update(scene, Frame);
+            Integrate(scene, fighter, Frame);
+            seconds += Frame;
+        }
+        CHECK(scene.Get<WarpDriveComponent>(fighter).stage == WarpStage::Off);
+        CHECK(!scene.Get<ShipComponent>(fighter).autopilot);
+        CHECK(std::abs(Distance(scene.GetWorldPosition(fighter), far) - Warp::StationExit) < 50.0);
+    }
+    return true;
+}
+
 // Anciennes scènes : la vitesse de warp était dans le vaisseau (« ship.warpSpeed »). Un vaisseau qui en avait reçoit le
 // moteur de warp du jeu ; une station (0) n'en reçoit pas.
 static bool RunWarpDriveConversionTests() {
@@ -178,4 +209,4 @@ static bool RunWarpDriveConversionTests() {
     return true;
 }
 
-bool RunWarpTests() { return RunWarpTripTests() && RunWarpPlanetTests() && RunWarpDriveConversionTests(); }
+bool RunWarpTests() { return RunWarpTripTests() && RunWarpPlanetTests() && RunWarpArrivalTests() && RunWarpDriveConversionTests(); }

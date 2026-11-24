@@ -45,6 +45,9 @@ namespace Game::Warp {
         constexpr double PlanetMargin = 2000.0;     // m au-dessus de l'atmosphère : on n'entre pas en warp plus près
         constexpr double PlanetClearance = 20000.0; // m au-dessus de l'atmosphère d'une planète qu'il contourne
         constexpr double PlanetExit = 10000.0;      // m au-dessus de l'atmosphère d'une planète visée
+        // m avant la sortie : arrivé. La dernière image vise la sortie pile, mais la vitesse en float et l'arrondi des
+        // positions l'en laissent parfois à 1e-12 m ; il n'y arrivait plus jamais (vitesse nulle, warp jamais fini).
+        constexpr double ArrivalTolerance = 0.01;
 
         // Limite d'une planète : le haut de son atmosphère, ou de ses montagnes sans atmosphère.
         double Boundary(const PlanetComponent& planet) {
@@ -130,7 +133,7 @@ namespace Game::Warp {
             const Math::Vector3d offset = Math::Delta(position, drive.target);
             const double distance = Math::Length(offset);
             const double remaining = distance - drive.exit;
-            if (remaining <= 0.0 || distance < 1.0e-3) {
+            if (remaining <= ArrivalTolerance || distance < 1.0e-3) {
                 Leave(ship, drive); // arrivé
                 return;
             }
