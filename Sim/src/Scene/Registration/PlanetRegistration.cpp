@@ -241,6 +241,8 @@ namespace Flux {
             .Field("grassRange", "Herbe : visible jusqu'à (m)", &VegetationComponent::grassRange,
                    {.speed = 1.0, .min = 0.0, .max = 300.0, .decimals = 0})
             .Field("grassWind", "Herbe : vent", &VegetationComponent::grassWind,
-                   {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2});
+                   {.speed = 0.01, .min = 0.0, .max = 1.0, .decimals = 2})
+            .Field("grassFlowers", "Herbe : fleurs", &VegetationComponent::grassFlowers,
+                   {.speed = 0.005, .min = 0.0, .max = 0.3, .decimals = 3});
     }
 }

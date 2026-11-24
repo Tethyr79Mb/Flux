@@ -1438,7 +1438,8 @@ namespace Flux {
                        .height = std::clamp(vegetation->grassHeight, 0.02f, 3.0f),
                        .width = std::clamp(vegetation->grassWidth, 0.005f, 0.3f),
                        .range = std::clamp(vegetation->grassRange, 0.0f, 300.0f) * (vertexPath ? GrassVertexRange : 1.0f),
-                       .wind = std::clamp(vegetation->grassWind, 0.0f, 1.0f)};
+                       .wind = std::clamp(vegetation->grassWind, 0.0f, 1.0f),
+                       .flowers = std::clamp(vegetation->grassFlowers, 0.0f, 0.3f)};
             grass = m_grass.density > 0.0f && m_grass.range > 1.0f;
         }
         const Math::Matrix4f rotation = transform.rotation.ToMatrix();
@@ -2913,7 +2914,7 @@ namespace Flux {
                                                     : (m_groundGeometryOnly ? *m_grassVertexGeometry : *m_grassVertex);
         BindPipeline(commands, state, frameIndex, pipeline);
         commands.SetBindGroup(0, m_groundGroup ? *m_groundGroup : m_models->GetWhiteGroup());
-        DrawParams params{{m_grass.density, m_grass.height, m_grass.range, m_grass.width}, {m_grass.wind, 0.0f, 0.0f, 0.0f},
+        DrawParams params{{m_grass.density, m_grass.height, m_grass.range, m_grass.width}, {m_grass.wind, m_grass.flowers, 0.0f, 0.0f},
                           0u, 0.0f, 0u, 0.0f, 1.0f, 0.0f, 0.0f, 0u, 0u, {}};
         if (m_grassMesh) {
             for (const TileBatch& batch : m_grassBatches) {
