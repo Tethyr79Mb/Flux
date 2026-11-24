@@ -269,6 +269,14 @@ namespace Flux::Planetology {
         return Faces[face % 6].s;
     }
 
+    Math::Vector3d GetFaceAxisT(std::uint32_t face) {
+        return Faces[face % 6].t;
+    }
+
+    Math::Vector3d GetFaceNormal(std::uint32_t face) {
+        return Faces[face % 6].normal;
+    }
+
     Math::Vector3d DirectionFromFace(std::uint32_t face, double s, double t) {
         const Face& f = Faces[face % 6];
         const double a = std::tan(s * QuarterPi);

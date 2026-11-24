@@ -65,6 +65,9 @@ namespace Flux::Planetology {
     FLUX_SIM_API Math::Vector3d DirectionFromFace(std::uint32_t face, double s, double t);
     // Axe s d'une face (le sens des colonnes de ses tuiles).
     FLUX_SIM_API Math::Vector3d GetFaceAxisS(std::uint32_t face);
+    // Axe t et normale d'une face (DirectionFromFace = normale + s.tan(s.π/4) + t.tan(t.π/4), normalisé).
+    FLUX_SIM_API Math::Vector3d GetFaceAxisT(std::uint32_t face);
+    FLUX_SIM_API Math::Vector3d GetFaceNormal(std::uint32_t face);
     // Inverse : la face où tombe la direction et ses coordonnées (s, t) de -1 à 1.
     FLUX_SIM_API void FaceFromDirection(const Math::Vector3d& direction, std::uint32_t& face, double& s, double& t);
 
