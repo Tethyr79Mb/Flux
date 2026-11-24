@@ -84,6 +84,7 @@ namespace Flux {
         bool temporalAA = true; // anticrénelage temporel (TAA), en Natif
         Upscaling upscaling = DefaultUpscaling;
         float sharpness = DefaultSharpness;
+        float fieldOfView = DefaultFieldOfView; // degrés, voir Engine::SetFieldOfView
         GroundDetail groundDetail = DefaultGroundDetail;
         CloudQuality cloudQuality = DefaultCloudQuality;
         VegetationDistance vegetationDistance = DefaultVegetationDistance;
@@ -137,6 +138,12 @@ namespace Flux {
         // Interface FluxUI de la frame en cours (panneaux décrits dans la fonction de mise à jour du jeu).
         UI::Context& GetUi();
         Camera& GetCamera() { return m_camera; }
+        // Champ de vision du joueur (degrés, horizontal en 16:9, borné à MinFieldOfView..MaxFieldOfView) : la caméra
+        // le prend tout de suite, et le pilote l'élargit un peu en accélérant (PlayerCamera).
+        void SetFieldOfView(float degrees);
+        float GetFieldOfView() const { return m_fieldOfView; }
+        // Le même en angle vertical (radians), celui de Camera::verticalFov hors accélération.
+        float GetBaseVerticalFov() const { return m_baseVerticalFov; }
         FlyCameraController& GetCameraController() { return m_cameraController; }
         // Le monde simulé (scène, physique, projectiles, pas fixe), sans ce qui s'affiche.
         Simulation& GetSimulation() { return m_simulation; }
@@ -358,6 +365,8 @@ namespace Flux {
         CloseFunction m_closeRequestHandler;
         // Provisoire : la caméra et son pilotage iront dans le viewport de l'éditeur.
         Camera m_camera;
+        float m_fieldOfView = DefaultFieldOfView;
+        float m_baseVerticalFov = VerticalFovFromFieldOfView(DefaultFieldOfView);
         FlyCameraController m_cameraController;
         bool m_quitRequested = false;
         bool m_showDebugOverlay = true;

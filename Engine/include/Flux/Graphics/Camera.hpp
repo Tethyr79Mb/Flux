@@ -6,9 +6,22 @@
 #include "Flux/Math/Vector3.hpp"
 #include "Flux/Math/WorldPosition.hpp"
 
+#include <cmath>
 #include <numbers>
 
 namespace Flux {
+    // Champ de vision réglé par le joueur, en degrés : horizontal pour un écran 16:9, d'où un angle vertical fixe. Un
+    // écran plus large voit donc plus sur les côtés (Hor+) au lieu de perdre le haut et le bas.
+    constexpr float DefaultFieldOfView = 86.0f;
+    constexpr float MinFieldOfView = 60.0f;
+    constexpr float MaxFieldOfView = 120.0f;
+
+    // Angle vertical (radians) d'un champ de vision horizontal en 16:9 (degrés).
+    inline float VerticalFovFromFieldOfView(float degrees) {
+        const float halfWidth = std::tan(degrees * std::numbers::pi_v<float> / 360.0f);
+        return 2.0f * std::atan(halfWidth * 9.0f / 16.0f);
+    }
+
     // Caméra perspective. Repère monde main droite, y vers le haut, mètres.
     // La position est un secteur + un décalage double : le rendu se fait relativement à elle,
     // pour rester précis n'importe où dans la galaxie.

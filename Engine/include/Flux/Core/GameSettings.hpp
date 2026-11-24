@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Flux/Export.hpp"
+#include "Flux/Graphics/Camera.hpp"
 #include "Flux/Math/Vector2.hpp"
 #include "Flux/Planetology/CloudQuality.hpp"
 #include "Flux/Planetology/GroundDetail.hpp"
@@ -28,6 +29,7 @@ namespace Flux {
         bool temporalAA = true;    // anticrénelage temporel (TAA), en Natif
         Upscaling upscaling = DefaultUpscaling;
         float sharpness = DefaultSharpness; // netteté ajoutée par FSR, 0 à 1
+        float fieldOfView = DefaultFieldOfView; // degrés, horizontal en 16:9 (Engine::SetFieldOfView)
         GroundDetail groundDetail = DefaultGroundDetail;
         CloudQuality cloudQuality = DefaultCloudQuality;
         VegetationDistance vegetationDistance = DefaultVegetationDistance;

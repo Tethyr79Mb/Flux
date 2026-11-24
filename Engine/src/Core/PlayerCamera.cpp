@@ -271,10 +271,10 @@ namespace Flux {
         // Champ de vision du pilote élargi quand le vaisseau accélère vers l'avant (moteurs à fond, boost, mode voyage) :
         // le décor semble filer plus vite. Accélération mesurée sur sa vitesse dans le monde, pour qu'un virage, qui
         // tourne sa vitesse dans ses axes, n'y compte pas.
-        constexpr float BaseFov = std::numbers::pi_v<float> / 3.0f;   // 60°, celui de Camera
         constexpr float FovPerThrust = 3.0f;  // ° pour une accélération égale à ShipComponent::acceleration
         constexpr float FovMax = 8.0f;        // °
         constexpr float FovSettle = 0.4f;     // s
+        const float baseFov = engine.GetBaseVerticalFov(); // réglage du joueur
         Scene& scene = engine.GetScene();
         float wanted = 0.0f;
         const Entity seat = Seats::GetPilotSeat(scene, player);
@@ -297,12 +297,12 @@ namespace Flux {
         if (ship == NullEntity && m_fovExtra < 0.01f) {
             m_fovExtra = 0.0f; // revenu : la caméra du personnage garde son champ de vision
             if (m_fovWidened) {
-                engine.GetCamera().verticalFov = BaseFov;
+                engine.GetCamera().verticalFov = baseFov;
                 m_fovWidened = false;
             }
             return;
         }
-        engine.GetCamera().verticalFov = BaseFov + m_fovExtra * std::numbers::pi_v<float> / 180.0f;
+        engine.GetCamera().verticalFov = baseFov + m_fovExtra * std::numbers::pi_v<float> / 180.0f;
         m_fovWidened = true;
     }
 

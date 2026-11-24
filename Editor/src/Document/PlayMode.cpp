@@ -72,6 +72,7 @@ namespace FluxEditor {
             Platform::ShowError(engine.GetWindow(), "Arrêter le jeu", "Scène d'origine non restaurée : " + restored.error());
         }
         engine.GetCamera() = m_savedCamera;
+        engine.GetCamera().verticalFov = engine.GetBaseVerticalFov(); // réglage peut-être changé pendant le jeu
         m_savedScene.clear();
         Log::Info("jeu arrêté : retour à la scène éditée");
     }

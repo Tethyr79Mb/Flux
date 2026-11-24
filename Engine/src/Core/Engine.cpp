@@ -106,6 +106,7 @@ namespace Flux {
         m_renderer->SetTemporalAA(config.temporalAA);
         m_renderer->SetUpscaling(config.upscaling);
         m_renderer->SetSharpness(config.sharpness);
+        SetFieldOfView(config.fieldOfView);
         m_renderer->SetGroundDetail(config.groundDetail);
         m_renderer->SetCloudQuality(config.cloudQuality);
         m_renderer->SetVegetationDistance(config.vegetationDistance);
@@ -155,6 +156,9 @@ namespace Flux {
         m_interfaceBindings->SetEngineValue("Netteté FSR", "Graphismes", {.get = [this] { return static_cast<double>(m_renderer->GetSharpness()); },
                                              .set = [this](double value) { m_renderer->SetSharpness(static_cast<float>(value)); },
                                              .getText = [this] { return std::format("{:.0f} %", m_renderer->GetSharpness() * 100.0f); }});
+        m_interfaceBindings->SetEngineValue("Champ de vision", "Graphismes", {.get = [this] { return static_cast<double>(m_fieldOfView); },
+                                             .set = [this](double value) { SetFieldOfView(static_cast<float>(value)); },
+                                             .getText = [this] { return std::format("{:.0f}°", m_fieldOfView); }});
         // Numéro dans GroundDetailLabels (0 Bas à 3 Ultra).
         m_interfaceBindings->SetEngineValue("Détail du sol", "Graphismes",
                                             {.get = [this] { return static_cast<double>(m_renderer->GetGroundDetail()); },
@@ -261,6 +265,12 @@ namespace Flux {
 
     const PlayerCommand& Engine::GetPlayerCommand(Entity player) const {
         return m_simulation.GetPlayerCommand(player);
+    }
+
+    void Engine::SetFieldOfView(float degrees) {
+        m_fieldOfView = std::clamp(degrees, MinFieldOfView, MaxFieldOfView);
+        m_baseVerticalFov = VerticalFovFromFieldOfView(m_fieldOfView);
+        m_camera.verticalFov = m_baseVerticalFov; // en vol, PlayerCamera y ajoute l'élargissement dès l'image suivante
     }
 
     void Engine::SampleLocalCommand() {

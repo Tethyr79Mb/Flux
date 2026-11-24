@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Flux/Graphics/Camera.hpp>
 #include <Flux/Renderer/Renderer.hpp>
 #include <Flux/UI/Context.hpp>
 
@@ -48,6 +49,8 @@ namespace FluxEditor {
         bool m_temporalAA = true;
         Flux::Upscaling m_upscaling = Flux::DefaultUpscaling;
         float m_sharpness = Flux::DefaultSharpness;
+        float m_fieldOfView = Flux::DefaultFieldOfView;
+        bool m_fieldOfViewChanged = false;
         bool m_sharpnessChanged = false; // pas encore enregistré (curseur tenu)
         Flux::GroundDetail m_groundDetail = Flux::DefaultGroundDetail;
         Flux::CloudQuality m_cloudQuality = Flux::DefaultCloudQuality;
