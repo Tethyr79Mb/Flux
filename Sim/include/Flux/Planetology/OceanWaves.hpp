@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Math/Vector3.hpp"
 #include "Flux/SimExport.hpp"
 
 #include <array>
@@ -54,4 +55,37 @@ namespace Flux::Planetology {
     // Écart type de la hauteur de l'eau (m) que donne le spectre de toutes les cascades ; les marins parlent de « hauteur
     // significative », quatre fois plus grande (le tiers des plus hautes vagues, du creux à la crête).
     FLUX_SIM_API float OceanHeightDeviation(const OceanWaveSettings& settings);
+
+    // Plan de l'eau où se posent les cascades, tangent à la mer sous la caméra : les vagues sont des carrés qui se
+    // répètent dans un plan, la mer une sphère. Le point d'ancrage suit la caméra (à la verticale, sur la mer) ; ses
+    // coordonnées dans le plan avancent d'autant, en double, et ses axes sont transportés sans tourner sur eux-mêmes : un
+    // point fixe de la planète, près de la caméra, garde les mêmes coordonnées d'une image à l'autre (les vagues ne
+    // glissent pas quand on avance), même à des milliers de km de l'endroit où le plan a été posé.
+    class FLUX_SIM_API OceanWavePlane {
+        public:
+        // La caméra a sauté plus loin que ça (m) en une image : plan reposé (téléportation, autre planète).
+        static constexpr double ResetDistance = 50000.0;
+
+        void Reset() { m_valid = false; }
+        // `camera` : position de la caméra dans le repère de la planète (m) ; `seaRadius` : rayon de la mer (m).
+        void Follow(const Math::Vector3d& camera, double seaRadius);
+
+        bool IsValid() const { return m_valid; }
+        Math::Vector3d GetAnchor() const { return m_up * m_radius; } // dans le repère de la planète
+        const Math::Vector3d& GetUp() const { return m_up; }
+        const Math::Vector3d& GetEast() const { return m_east; }   // axe x des cascades
+        const Math::Vector3d& GetNorth() const { return m_north; } // axe z
+        // Coordonnées (x, z) de l'ancrage dans le plan (m).
+        const std::array<double, 2>& GetOffset() const { return m_offset; }
+        // Coordonnées dans le plan d'un point de la planète proche de l'ancrage (ce que font les shaders de l'eau).
+        std::array<double, 2> GetCoordinates(const Math::Vector3d& point) const;
+
+        private:
+        Math::Vector3d m_up{0.0, 1.0, 0.0};
+        Math::Vector3d m_east{1.0, 0.0, 0.0};
+        Math::Vector3d m_north{0.0, 0.0, -1.0};
+        double m_radius = 0.0;
+        std::array<double, 2> m_offset{};
+        bool m_valid = false;
+    };
 }

@@ -164,6 +164,16 @@ namespace Flux {
             .Field("seaLevel", "Niveau de la mer (% du relief)", &PlanetComponent::seaLevel,
                    {.speed = 0.1, .min = -100.0, .max = 100.0, .decimals = 2})
             .Field("waterColor", "Couleur de l'eau", &PlanetComponent::waterColor, {.alpha = false})
+            .Field("waveWind", "Vent des vagues (m/s)", &PlanetComponent::waveWind,
+                   {.speed = 0.1, .min = 0.5, .max = 40.0, .decimals = 1})
+            .Field("waveDirection", "Direction du vent (°)", &PlanetComponent::waveDirection,
+                   {.speed = 1.0, .min = -360.0, .max = 360.0, .decimals = 0})
+            .Field("waveFetch", "Étendue du vent (km)", &PlanetComponent::waveFetch,
+                   {.speed = 1.0, .min = 1.0, .max = 2000.0, .decimals = 0})
+            .Field("waveChoppiness", "Crêtes pointues", &PlanetComponent::waveChoppiness,
+                   {.speed = 0.01, .min = 0.0, .max = 2.0, .decimals = 2})
+            .Field("waveSpread", "Mer croisée", &PlanetComponent::waveSpread,
+                   {.speed = 0.01, .min = 0.2, .max = 4.0, .decimals = 2})
             .Group("relief", "Relief")
             .Field("gravity", "Gravité (m/s²)", &PlanetComponent::gravity,
                    {.speed = 0.01, .min = 0.0, .max = 100.0, .decimals = 2})

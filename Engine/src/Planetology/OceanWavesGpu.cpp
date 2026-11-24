@@ -105,6 +105,12 @@ namespace Flux::Planetology {
         if (!m_device.WriteBuffer(*m_spectrum, 0, data.data(), data.size() * sizeof(data[0]))) {
             return false;
         }
+        // Écart type de la hauteur tirée (somme des variances des ondes), sans refaire le spectre (OceanHeightDeviation).
+        double variance = 0.0;
+        for (const std::array<float, 4>& wave : data) {
+            variance += double{wave[0]} * wave[0] + double{wave[1]} * wave[1] + double{wave[2]} * wave[2] + double{wave[3]} * wave[3];
+        }
+        m_heightDeviation = static_cast<float>(std::sqrt(variance));
         m_settings = settings;
         m_hasSettings = true;
         return true;

@@ -33,6 +33,9 @@ namespace Flux::Planetology {
         const RHI::Texture& GetDisplacement(std::uint32_t cascade) const { return *m_displacement[cascade]; }
         const RHI::Texture& GetSlopes(std::uint32_t cascade) const { return *m_slopes[cascade]; }
         const OceanWaveSettings& GetSettings() const { return m_settings; }
+        bool HasSettings() const { return m_hasSettings; }
+        // Écart type de la hauteur de l'eau (m) des cascades simulées, d'après le tirage.
+        float GetHeightDeviation() const { return m_heightDeviation; }
 
         private:
         explicit OceanWavesGpu(RHI::Device& device) : m_device(device) {}
@@ -50,6 +53,7 @@ namespace Flux::Planetology {
         std::unique_ptr<RHI::Pipeline> m_assemblePipeline;
         OceanWaveSettings m_settings;
         bool m_hasSettings = false;
+        float m_heightDeviation = 0.0f;
         bool m_hasFoam = false; // l'écume d'avant est dans les textures (sinon : contenu indéfini, pas relu)
     };
 }
