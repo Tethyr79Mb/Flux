@@ -382,6 +382,8 @@ namespace Flux {
         float grassWidth = 0.03f;  // m
         float grassRange = 150.0f;  // m
         float grassWind = 0.35f;
+        // Part des brins qui portent une fleur, dans une tache fleurie moyenne (0 : aucune) ; plus au chaud.
+        float grassFlowers = 0.04f;
     };
 
     // Nuages d'une planète (sur l'entité de son PlanetComponent) : une couche de `thickness` mètres d'épaisseur à

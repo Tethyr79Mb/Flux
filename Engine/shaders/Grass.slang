@@ -17,7 +17,9 @@
 // Commandes (RHI::DrawIndexedCommand, celles des tuiles, MeshRenderer) : vertexOffset = case de la tuile dans sa page
 // x 512 (GrassVertexShift), firstInstance = DrawData de la tuile x 4096 (GrassInstanceShift).
 // Réglages (DrawParams) : color = densité (brins par m²), hauteur moyenne (m), portée (m), largeur (m) ; emissive.x =
-// force du vent.
+// force du vent, emissive.y = part des brins fleuris.
+// Fleurs : une part des brins (GrassFlowers) porte une tête colorée, élargie en losange au bout d'une tige fine, par
+// taches de quelques mètres d'une même couleur (une espèce par tache), plus nombreuses au chaud et sur les plages vertes.
 
 #include "MeshCulling.slang"
 
@@ -43,6 +45,15 @@ float GrassHeight() { return params.color.y; }
 float GrassRange() { return params.color.z; }
 float GrassWidth() { return params.color.w; }
 float GrassWind() { return params.emissive.x; }
+float GrassFlowers() { return params.emissive.y; }
+
+// Couleurs des fleurs (albédo linéaire) : blanc, jaune, mauve, rouge, bleu, orange.
+static const uint GrassFlowerColors = 6;
+static const float3 GrassFlowerPalette[GrassFlowerColors] = {
+    float3(0.72, 0.72, 0.66), float3(0.78, 0.55, 0.04), float3(0.38, 0.12, 0.52),
+    float3(0.62, 0.05, 0.04), float3(0.14, 0.26, 0.70), float3(0.80, 0.30, 0.03)};
+static const float GrassFlowerCell = 2.5; // m : taille d'une tache d'une même fleur
+static const float GrassFlowerHead = 0.62; // hauteur relative où commence la tête
 
 // Sommet `index` de la tuile glissé vers sa parente comme le sol le dessine (PlanetVertex) : l'herbe pousse aussi sur
 // les tuiles qui glissent, sans flotter ni s'enfoncer.
@@ -165,6 +176,7 @@ struct GrassBlade
     float3 side;   // demi-largeur au pied, dans le monde
     float3 facing; // normale du ruban, tournée vers la caméra
     float3 tint;   // multiplie la couleur de l'herbe du sol (fragmentGrass)
+    float4 petals; // fleur : couleur de sa tête, 1 en a ; 0 : un brin d'herbe
     uint planet;
     float3 rim;    // contour d'une planète sans air (PlanetRim), comme le sol
 };
@@ -180,6 +192,7 @@ GrassBlade NoGrassBlade()
     blade.side = float3(0.0);
     blade.facing = float3(0.0, 1.0, 0.0);
     blade.tint = float3(0.0);
+    blade.petals = float4(0.0);
     blade.planet = 0;
     blade.rim = float3(0.0);
     return blade;
@@ -292,17 +305,31 @@ GrassBlade MakeGrassBlade(uint draw, uint firstVertex, uint seed, uint index, fl
                                  + 0.25 * sin(k * (83.0 * ground.x - 61.0 * ground.z + 151.0 * ground.y)));
     // Plus hauts au cœur d'une touffe, plus courts et plus couchés à son bord.
     const float tuftShape = r4.x >= GrassScattered ? lerp(0.75, 1.25, inTuft) : 1.0;
+    // Fleur ? Tache de GrassFlowerCell m : sa couleur et sa richesse (une sur trois sans fleurs, les autres plus ou
+    // moins fleuries) ; rien au froid ni sur les plages sèches.
+    const int3 flowerCell = int3(floor(ground / GrassFlowerCell));
+    const uint flowerHash = GroundHash(uint(flowerCell.x) * 0x9E3779B1u ^ uint(flowerCell.y) * 0x85EBCA77u ^ uint(flowerCell.z) * 0xC2B2AE3Du);
+    const float2 flowerPatch = GroundRandom(flowerHash);
+    const float flowerRich = saturate(flowerPatch.x * 1.5 - 0.5) * 3.0 * smoothstep(2.0, 10.0, cover.temperature) * patch;
+    const bool flower = GroundRandom(GroundHash(h3 ^ 0x68E31DA4u)).x < GrassFlowers() * flowerRich;
     const float height = GrassHeight() * lerp(0.55, 1.35, clump) * lerp(0.65, 1.25, patch) * lerp(0.5, 1.2, r1.y) * tuftShape * grow;
     // Toujours un peu ployé (vers `facing`, au hasard autour du brin) : le point de courbure haut et droit, la pointe
     // qui retombe en arc.
-    const float lean = lerp(0.2, 0.8, r2.y) * (r4.x >= GrassScattered ? lerp(1.3, 0.7, inTuft) : 1.0);
+    // Une fleur se tient plus droite, un peu au-dessus de l'herbe.
+    const float lean = lerp(0.2, 0.8, r2.y) * (r4.x >= GrassScattered ? lerp(1.3, 0.7, inTuft) : 1.0) * (flower ? 0.3 : 1.0);
     const float3 tipDirection = normalize(growUp * (1.0 - 0.5 * lean) + facing * lean + windDirection * push * 1.5);
     blade.root -= growUp * 0.03; // sous le sol : pas de jour entre le brin et un triangle du sol voisin
-    blade.tip = blade.root + tipDirection * height;
-    blade.bend = blade.root + growUp * (height * 0.8);
+    const float stem = flower ? height * 1.15 : height;
+    blade.tip = blade.root + tipDirection * stem;
+    blade.bend = blade.root + growUp * (stem * 0.8);
     // Plus larges quand il en reste peu (au loin : le sol reste couvert), plus fins quand ils rapetissent.
     const float width = GrassWidth() * lerp(0.7, 1.3, r0.x) * sqrt(grow) / sqrt(clamp(keep, 0.02, 1.0));
     blade.side = side * (0.5 * width);
+    if (flower) {
+        const uint kind = min(uint(flowerPatch.y * float(GrassFlowerColors)), GrassFlowerColors - 1);
+        // Un peu de variété d'une fleur à l'autre de la même tache.
+        blade.petals = float4(GrassFlowerPalette[kind] * lerp(0.8, 1.1, r3.x), 1.0);
+    }
     facing = dot(facing, -blade.root) < 0.0 ? -facing : facing;
     // Normale penchée vers le ciel : les brins s'éclairent presque comme le sol sous eux. Sans cela, debout face à un
     // soleil bas, ils sortent bien plus sombres que le sol et chaque brin se détache comme un poil.
@@ -328,7 +355,9 @@ struct GrassVertexOutput
     float4 position : SV_Position;
     float3 worldPosition : POSITION; // relatif à la caméra
     float3 normal : NORMAL;
-    float4 tintHeight : TINT; // rgb : teinte du brin (GrassBlade::tint) ; a : hauteur relative
+    // rgb : teinte du brin (GrassBlade::tint), ou couleur des pétales d'une fleur ; a : hauteur relative, + 2 pour une
+    // fleur (pas de sortie de plus : les mesh shaders gardent leurs sommets petits).
+    float4 tintHeight : TINT;
     nointerpolation float3 rim : RIM;
     nointerpolation uint planet : PLANET;
 };
@@ -341,13 +370,15 @@ GrassVertexOutput GrassVertex(GrassBlade blade, uint k, uint segments)
     const float across = tip ? 0.0 : ((k & 1u) == 0 ? -1.0 : 1.0);
     const float u = 1.0 - t;
     const float3 center = u * u * blade.root + 2.0 * t * u * blade.bend + t * t * blade.tip;
-    const float3 position = center + blade.side * (across * (1.0 - t * t)); // feuille : large, puis effilée au bout
+    // Feuille : large, puis effilée au bout. Fleur : tige fine, puis la tête en losange (la pointe la ferme).
+    const float width = blade.petals.a > 0.0 ? lerp(0.35, 2.2, smoothstep(0.4, GrassFlowerHead + 0.05, t)) : 1.0 - t * t;
+    const float3 position = center + blade.side * (across * width);
     GrassVertexOutput output;
     output.position = Transform(frame[0].viewProjection, position);
     output.worldPosition = position;
     const float3 sideDirection = normalize(blade.side);
     output.normal = normalize(blade.facing + sideDirection * (across * 0.5));
-    output.tintHeight = float4(blade.tint, t);
+    output.tintHeight = blade.petals.a > 0.0 ? float4(blade.petals.rgb, t + 2.0) : float4(blade.tint, t);
     output.rim = blade.rim;
     output.planet = blade.planet;
     return output;
@@ -416,9 +447,16 @@ GBufferOutput fragmentGrass(GrassVertexOutput input)
     // Pied sombre (les voisins lui cachent ciel et soleil), pointe claire et un peu sèche : en moyenne
     // GrassMeadowShade, la couleur que le sol prend sous l'herbe (PlanetGBuffer).
     // Ciel compté moins fort que sur le sol (occlusion 0,85 en haut) : sinon, à l'ombre, les brins bleuissent.
-    const float height = input.tintHeight.a;
+    const bool flower = input.tintHeight.a >= 2.0;
+    const float height = flower ? input.tintHeight.a - 2.0 : input.tintHeight.a;
     const float occlusion = lerp(0.15, 0.85, height);
-    const float3 diffuse = grass * input.tintHeight.rgb * lerp(0.2, 1.0, height * (2.0 - height))
-                         * lerp(float3(1.0), float3(1.2, 1.15, 0.85), height * height);
+    // Tige d'une fleur : l'herbe sans teinte propre.
+    const float3 tint = flower ? float3(0.85) : input.tintHeight.rgb;
+    float3 diffuse = grass * tint * lerp(0.2, 1.0, height * (2.0 - height))
+                   * lerp(float3(1.0), float3(1.2, 1.15, 0.85), height * height);
+    // Tête d'une fleur : ses pétales, au-dessus des brins voisins (presque pas d'ombre d'eux).
+    if (flower && height > GrassFlowerHead) {
+        diffuse = input.tintHeight.rgb;
+    }
     return GBufferResult(input.rim, float2(0.0), diffuse, GBufferGrass, normal, normal, float4(0.4, 0.6, occlusion, 0.35));
 }
