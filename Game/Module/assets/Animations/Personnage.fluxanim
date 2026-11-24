@@ -1,11 +1,19 @@
 {
   "format": "flux.anim",
   "version": 1,
+  "files": [
+    "Animations/Mixamo/PistoletTenir.glb",
+    "Animations/Mixamo/PistoletViser.glb",
+    "Animations/Mixamo/PistoletTirer.glb"
+  ],
   "parameters": {
     "speed": 0,
     "gait": 0,
     "airTime": 0,
-    "seat": 0
+    "seat": 0,
+    "armed": 0,
+    "aiming": 0,
+    "fire": 0
   },
   "start": "Repos",
   "states": [
@@ -30,5 +38,27 @@
     { "to": "En l'air", "when": ["seat == 0", "airTime > 0.15"] },
     { "to": "Repos", "when": ["seat == 0", "airTime <= 0.15", "speed < 0.1"] },
     { "to": "Marche et course", "when": ["seat == 0", "airTime <= 0.15", "speed >= 0.1"] }
+  ],
+  "layers": [
+    {
+      "name": "Pistolet",
+      "mask": "Spine",
+      "weight": "armed",
+      "fade": 0.3,
+      "modelSpace": true,
+      "start": "Tenir",
+      "states": [
+        { "name": "Tenir", "animation": "PistoletTenir" },
+        { "name": "Viser", "animation": "PistoletViser", "end": 1.25 },
+        { "name": "Tirer", "animation": "PistoletTirer", "loop": false }
+      ],
+      "transitions": [
+        { "to": "Tirer", "when": ["fire > 0.5"], "duration": 0.05 },
+        { "from": "Tirer", "to": "Viser", "atEnd": true, "when": ["aiming > 0.5"], "duration": 0.1 },
+        { "from": "Tirer", "to": "Tenir", "atEnd": true, "when": ["aiming < 0.5"], "duration": 0.2 },
+        { "from": "Tenir", "to": "Viser", "when": ["aiming > 0.5"], "duration": 0.15 },
+        { "from": "Viser", "to": "Tenir", "when": ["aiming < 0.5"], "duration": 0.2 }
+      ]
+    }
   ]
 }

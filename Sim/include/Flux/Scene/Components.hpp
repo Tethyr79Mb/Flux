@@ -95,6 +95,8 @@ namespace Flux {
         // simplifie plus tôt (décor).
         bool automaticLod = true;
         float lodBias = 1.0f;
+        // Décoché : pas dessiné (arme rangée) ; son squelette et ses animations suivent toujours.
+        bool visible = true;
     };
 
     // Lumière de contour (« rim light ») : les bords de l'objet vus de profil s'éclairent de cette couleur, comme en
@@ -609,6 +611,7 @@ namespace Flux {
         std::uint8_t fadeCount = 0;
         float weight = 1.0f;         // part atteinte, de 0 à 1, en route vers celle du graphe
         std::int16_t maskNode = -1;  // os de son masque dans ModelSkeleton::nodes ; -1 : tout le corps
+        bool modelSpace = false;     // Graph::Layer::modelSpace
     };
 
     // Animation d'un modèle et sa part dans sa couche, calculée par la simulation (Animator::Update) et appliquée au

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HandWeapons.hpp"
 #include "Missions.hpp"
 #include "Navigation.hpp"
 #include "Piloting.hpp"
@@ -41,6 +42,7 @@ namespace Game {
         PilotActions pilot;
         NavigationActions navigation;
         PlayerWeaponsState weapons;
+        HandWeapons::Actions handWeapons;
         std::vector<std::string> destroyed; // noms des cibles détruites au pas, gardés d'un pas à l'autre
         std::vector<Flux::Entity> combatTargets; // vaisseaux des joueurs visés par les ennemis, gardés aussi
         float spinSpeed = 1.0f;             // multiplie la vitesse des rotations continues (démo)

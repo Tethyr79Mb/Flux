@@ -34,7 +34,8 @@ namespace Flux {
                    {.speed = 10.0, .min = 0.0, .max = 1.0e7, .decimals = 0})
             .Field("automaticLod", "Détail automatique", &ModelComponent::automaticLod)
             .Field("lodBias", "Priorité du détail", &ModelComponent::lodBias,
-                   {.speed = 0.01, .min = 0.05, .max = 20.0, .decimals = 2});
+                   {.speed = 0.01, .min = 0.05, .max = 20.0, .decimals = 2})
+            .Field("visible", "Visible", &ModelComponent::visible);
         registry.Register<RimLightComponent>("rimLight", "Lumière de contour")
             .Field("color", "Couleur", &RimLightComponent::color, {.alpha = false})
             .Field("intensity", "Intensité", &RimLightComponent::intensity,

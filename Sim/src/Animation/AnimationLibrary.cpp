@@ -1,19 +1,22 @@
 #include "Flux/Animation/AnimationLibrary.hpp"
 
+#include "Flux/Animation/Animation.hpp"
 #include "Flux/Core/Log.hpp"
 #include "Flux/Platform/Filesystem.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <utility>
 #include <vector>
 
 namespace Flux {
     namespace {
-        // Nom d'os sans l'espace de noms d'un logiciel (« mixamorig:Hips » : « Hips »).
-        std::string_view BareName(std::string_view name) {
-            const std::size_t colon = name.rfind(':');
-            return colon == std::string_view::npos ? name : name.substr(colon + 1);
+        // Nom d'un fichier sans son dossier ni son extension (« Animations/Mixamo/Viser.glb » : « Viser »).
+        std::string_view FileStem(std::string_view file) {
+            file = file.substr(file.find_last_of("/\\") + 1);
+            const std::size_t dot = file.rfind('.');
+            return dot == std::string_view::npos ? file : file.substr(0, dot);
         }
 
         // Fichier lu pour ses animations seules ; nullptr s'il ne peut servir (illisible : dit au journal).
@@ -40,26 +43,177 @@ namespace Flux {
     }
 
     std::vector<ModelAnimation> RetargetAnimations(const ModelSkeleton& source, const ModelSkeleton& target) {
-        // Nœud de target pour chaque nœud de source : même nom, sinon même nom sans espace de noms.
+        // Nœud de target pour chaque nœud de source, par nom ; et l'inverse.
         std::vector<int> nodes(source.nodes.size(), -1);
+        std::vector<int> sources(target.nodes.size(), -1);
         for (std::size_t i = 0; i < source.nodes.size(); ++i) {
-            const std::string_view name = source.nodes[i].name;
-            auto found = std::ranges::find(target.nodes, name, &SkeletonNode::name);
-            if (found == target.nodes.end()) {
-                found = std::ranges::find_if(target.nodes, [&](const SkeletonNode& node) { return BareName(node.name) == BareName(name); });
+            nodes[i] = FindNode(target, source.nodes[i].name);
+            if (nodes[i] >= 0 && sources[static_cast<std::size_t>(nodes[i])] < 0) {
+                sources[static_cast<std::size_t>(nodes[i])] = static_cast<int>(i);
             }
-            nodes[i] = found != target.nodes.end() ? static_cast<int>(found - target.nodes.begin()) : -1;
         }
+        // Les hanches : le nœud recâblé le plus haut dont la place est animée (sinon le plus haut recâblé). Les
+        // rotations sont comparées dans le repère du modèle (glTF : Y en haut dans tout fichier), parents des hanches
+        // compris à leur repos : l'armature peut être tournée autrement d'un fichier à l'autre (Blender garde la
+        // rotation de 90° d'un rig FBX sur l'armature et la compense sur les hanches ; assimp, non).
+        std::vector<int> depths(source.nodes.size(), 0);
+        for (std::size_t i = 0; i < source.nodes.size(); ++i) {
+            const int parent = source.nodes[i].parent;
+            depths[i] = parent >= 0 ? depths[static_cast<std::size_t>(parent)] + 1 : 0; // parents avant enfants
+        }
+        int hips = -1;
+        for (const ModelAnimation& animation : source.animations) {
+            for (const AnimationChannel& channel : animation.channels) {
+                if (channel.path == AnimationPath::Translation && channel.node < nodes.size() && nodes[channel.node] >= 0
+                    && (hips < 0 || depths[channel.node] < depths[static_cast<std::size_t>(hips)])) {
+                    hips = static_cast<int>(channel.node);
+                }
+            }
+        }
+        for (std::size_t i = 0; i < source.nodes.size() && hips < 0; ++i) {
+            hips = nodes[i] >= 0 ? static_cast<int>(i) : -1;
+        }
+        if (hips < 0) {
+            return {};
+        }
+        const auto isUnder = [](const ModelSkeleton& skeleton, int node, int ancestor) {
+            for (; node >= 0; node = skeleton.nodes[static_cast<std::size_t>(node)].parent) {
+                if (node == ancestor) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        const int targetHips = nodes[static_cast<std::size_t>(hips)];
+        // Rotation des parents de node à leur repos, dans le repère du modèle.
+        const auto restAbove = [](const ModelSkeleton& skeleton, int node) {
+            Math::Quaternionf rotation{};
+            for (int n = skeleton.nodes[static_cast<std::size_t>(node)].parent; n >= 0; n = skeleton.nodes[static_cast<std::size_t>(n)].parent) {
+                rotation = skeleton.nodes[static_cast<std::size_t>(n)].rotation * rotation;
+            }
+            return rotation;
+        };
+        const Math::Quaternionf sourceAbove = restAbove(source, hips);
+        const Math::Quaternionf targetAbove = restAbove(target, targetHips);
+        // Rotation de chaque nœud sous top dans le repère du modèle, d'après des rotations locales (above : celle des
+        // parents de top ; 0 hors de top).
+        const auto globals = [&isUnder](const ModelSkeleton& skeleton, int top, const Math::Quaternionf& above, const auto& local,
+                                        std::vector<Math::Quaternionf>& out) {
+            out.assign(skeleton.nodes.size(), Math::Quaternionf{});
+            for (std::size_t i = 0; i < skeleton.nodes.size(); ++i) {
+                if (!isUnder(skeleton, static_cast<int>(i), top)) {
+                    continue;
+                }
+                const int parent = skeleton.nodes[i].parent;
+                out[i] = static_cast<int>(i) == top || parent < 0 ? above * local(i) : out[static_cast<std::size_t>(parent)] * local(i);
+            }
+        };
+        std::vector<Math::Quaternionf> sourceRest;
+        std::vector<Math::Quaternionf> targetRest;
+        globals(source, hips, sourceAbove, [&](std::size_t i) { return source.nodes[i].rotation; }, sourceRest);
+        globals(target, targetHips, targetAbove, [&](std::size_t i) { return target.nodes[i].rotation; }, targetRest);
+
+        // Os aux mêmes axes dans les deux fichiers : son premier enfant recâblé est placé dans la même direction (le
+        // même squelette, Mixamo vers Mixamo, même si la pose de repos diffère : en T dans les clips, en A dans le
+        // personnage). Il prend alors la rotation du fichier telle quelle dans le repère du modèle : comparé au
+        // repos, l'écart entre les deux repos s'ajouterait le long du bras. Sinon (axes propres des os différents,
+        // os sans enfant), il tourne comme dans le fichier par rapport à son repos.
+        std::vector<std::uint8_t> sameAxes(target.nodes.size(), 0);
+        for (std::size_t c = 0; c < target.nodes.size(); ++c) {
+            const int t = target.nodes[c].parent;
+            const int sc = sources[c];
+            if (t < 0 || sameAxes[static_cast<std::size_t>(t)] || sc < 0 || source.nodes[static_cast<std::size_t>(sc)].parent != sources[static_cast<std::size_t>(t)]) {
+                continue;
+            }
+            const Math::Vector3f to = target.nodes[c].translation;
+            const Math::Vector3f from = source.nodes[static_cast<std::size_t>(sc)].translation;
+            const float lengths = Math::Length(to) * Math::Length(from);
+            sameAxes[static_cast<std::size_t>(t)] = lengths > 1.0e-12f && Math::Dot(to, from) > 0.999f * lengths ? 1 : 2; // 2 : premier enfant différent
+        }
+
+        const SkeletonNode& fromHips = source.nodes[static_cast<std::size_t>(hips)];
+        const SkeletonNode& toHips = target.nodes[static_cast<std::size_t>(targetHips)];
+        const float fromHeight = Math::Length(fromHips.translation);
+        const float hipsRatio = fromHeight > 1.0e-6f ? Math::Length(toHips.translation) / fromHeight : 1.0f;
+
+        // Échantillonnée à 30 images par seconde (celles de Mixamo) : chaque os de target prend la même rotation
+        // que dans source par rapport à son repos, dans le repère du modèle (indépendant des axes propres des
+        // os, qui changent selon le logiciel d'export) ; les hanches se déplacent à l'échelle de target ; les autres
+        // os gardent leur longueur.
+        constexpr float Rate = 30.0f;
+        PoseEvaluator evaluator;
+        std::vector<Math::Quaternionf> sourcePose;
+        std::vector<Math::Quaternionf> targetPose;
         std::vector<ModelAnimation> animations;
         animations.reserve(source.animations.size());
         for (const ModelAnimation& animation : source.animations) {
+            const std::size_t frames = static_cast<std::size_t>(std::ceil(std::max(animation.duration, 0.0f) * Rate)) + 1;
             ModelAnimation& copy = animations.emplace_back();
             copy.name = animation.name;
             copy.duration = animation.duration;
+            const bool movesHips = std::ranges::any_of(animation.channels, [&](const AnimationChannel& channel) {
+                return static_cast<int>(channel.node) == hips && channel.path == AnimationPath::Translation;
+            });
+            // Une courbe par os recâblé sous les hanches (sa rotation dépend de celles de tous ses ancêtres).
+            std::vector<int> channelOf(target.nodes.size(), -1);
+            for (std::size_t t = 0; t < target.nodes.size(); ++t) {
+                if (sources[t] >= 0 && isUnder(target, static_cast<int>(t), targetHips)) {
+                    channelOf[t] = static_cast<int>(copy.channels.size());
+                    copy.channels.push_back({static_cast<std::uint32_t>(t), AnimationPath::Rotation, AnimationInterpolation::Linear, {}, {}});
+                }
+            }
+            const std::size_t hipsChannel = copy.channels.size(); // si movesHips
+            if (movesHips) {
+                copy.channels.push_back({static_cast<std::uint32_t>(targetHips), AnimationPath::Translation, AnimationInterpolation::Linear, {}, {}});
+            }
+            for (AnimationChannel& channel : copy.channels) {
+                channel.times.reserve(frames);
+                channel.values.reserve(frames * (channel.path == AnimationPath::Rotation ? 4 : 3));
+            }
+            for (std::size_t frame = 0; frame < frames; ++frame) {
+                const float time = std::min(static_cast<float>(frame) / Rate, animation.duration);
+                evaluator.Evaluate(source, AnimationSample{&animation, time, false});
+                const std::span<const NodePose> local = evaluator.GetLocalPoses();
+                globals(source, hips, sourceAbove, [&](std::size_t i) { return local[i].rotation; }, sourcePose);
+                // Rotations de target dans le repère du modèle, parents avant enfants : un os sans pareil dans
+                // source suit son parent à son repos.
+                targetPose.assign(target.nodes.size(), Math::Quaternionf{});
+                for (std::size_t t = 0; t < target.nodes.size(); ++t) {
+                    if (!isUnder(target, static_cast<int>(t), targetHips)) {
+                        continue;
+                    }
+                    const int parent = target.nodes[t].parent;
+                    const Math::Quaternionf above = static_cast<int>(t) == targetHips || parent < 0 ? targetAbove
+                                                                                               : targetPose[static_cast<std::size_t>(parent)];
+                    if (sources[t] < 0) {
+                        targetPose[t] = above * target.nodes[t].rotation;
+                        continue;
+                    }
+                    const auto s = static_cast<std::size_t>(sources[t]);
+                    targetPose[t] = sameAxes[t] == 1 ? sourcePose[s] : Math::Normalize(sourcePose[s] * sourceRest[s].Conjugate() * targetRest[t]);
+                    const Math::Quaternionf rotation = Math::Normalize(above.Conjugate() * targetPose[t]);
+                    AnimationChannel& channel = copy.channels[static_cast<std::size_t>(channelOf[t])];
+                    channel.times.push_back(time);
+                    channel.values.insert(channel.values.end(), {rotation.x, rotation.y, rotation.z, rotation.w});
+                }
+                if (movesHips) {
+                    const Math::Vector3f moved = toHips.translation + (local[static_cast<std::size_t>(hips)].translation - fromHips.translation) * hipsRatio;
+                    AnimationChannel& channel = copy.channels[hipsChannel];
+                    channel.times.push_back(time);
+                    channel.values.insert(channel.values.end(), {moved.x, moved.y, moved.z});
+                }
+            }
+            // Pièces qui coulissent (os de même longueur dans les deux : le même squelette) : leurs courbes telles quelles.
             for (const AnimationChannel& channel : animation.channels) {
-                if (channel.node < nodes.size() && nodes[channel.node] >= 0) {
-                    AnimationChannel& moved = copy.channels.emplace_back(channel);
-                    moved.node = static_cast<std::uint32_t>(nodes[channel.node]);
+                if (channel.path != AnimationPath::Translation || static_cast<int>(channel.node) == hips || channel.node >= nodes.size()
+                    || nodes[channel.node] < 0) {
+                    continue;
+                }
+                const SkeletonNode& from = source.nodes[channel.node];
+                const SkeletonNode& to = target.nodes[static_cast<std::size_t>(nodes[channel.node])];
+                if (Math::Length(from.translation - to.translation) <= 0.01f * std::max(Math::Length(to.translation), 1.0e-3f)) {
+                    copy.channels.push_back(channel);
+                    copy.channels.back().node = static_cast<std::uint32_t>(nodes[channel.node]);
                 }
             }
         }
@@ -135,6 +289,10 @@ namespace Flux {
                     continue;
                 }
                 std::vector<ModelAnimation> animations = RetargetAnimations(*source, *skeleton);
+                // Seule dans son fichier : nommée comme lui. Les exports de Mixamo s'appellent tous « mixamo.com ».
+                if (animations.size() == 1) {
+                    animations[0].name = FileStem(file);
+                }
                 std::ranges::move(animations, std::back_inserter(set->borrowed));
             }
         }

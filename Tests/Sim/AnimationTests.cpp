@@ -10,6 +10,7 @@
 #include "Flux/Assets/Model.hpp"
 #include "Flux/Scene/Scene.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -318,6 +319,28 @@ namespace {
         pose.EvaluateLayers(skeleton, samples, whole);
         CHECK(Near(pose.GetLocalPoses()[2].translation, {5, 0, 0}));
 
+        // Couche vue du modèle : le clip tourne les hanches de 54° (tir de profil) ; le torse, masqué, garde cette
+        // orientation sur les hanches de face de la marche, au lieu de la perdre avec elles.
+        {
+            ModelSkeleton turned;
+            turned.nodes.push_back({"hanches", -1, {}, {}, {1, 1, 1}});
+            turned.nodes.push_back({"torse", 0, {}, {}, {1, 1, 1}});
+            const Math::Quaternionf yaw = Math::Quaternionf::FromAxisAngle({0, 1, 0}, 0.94f);
+            ModelAnimation profile{"Profil", 1.0f, {}};
+            profile.channels.push_back({0, AnimationPath::Rotation, AnimationInterpolation::Step, {0}, {yaw.x, yaw.y, yaw.z, yaw.w}});
+            turned.animations.push_back(std::move(profile));
+            const AnimationSample over[] = {{nullptr, 0.0, true, 1.0f, 0}, {&turned.animations[0], 0.0, true, 1.0f, 1}};
+            const auto same = [](const Math::Quaternionf& a, const Math::Quaternionf& b) { return std::abs(Math::Dot(a, b)) > 0.9999f; };
+            const PoseLayer local[] = {{1, 1.0f}};
+            pose.EvaluateLayers(turned, over, local);
+            CHECK(same(pose.GetLocalPoses()[1].rotation, Math::Quaternionf::Identity()));
+            const PoseLayer model[] = {{1, 1.0f, true}};
+            pose.EvaluateLayers(turned, over, model);
+            CHECK(same(pose.GetLocalPoses()[0].rotation, Math::Quaternionf::Identity()) && same(pose.GetLocalPoses()[1].rotation, yaw));
+            CHECK(ParseAnimationGraph(R"({"states": [{"name": "A", "animation": "a"}],
+                "layers": [{"name": "B", "mask": "torse", "modelSpace": true, "states": [{"name": "B", "animation": "b"}]}]})")->layers[1].modelSpace);
+        }
+
         // Animateur : la couche du haut du corps suit le paramètre « armed », atteint en 0,5 s.
         AnimationLibrary library;
         auto graph = ParseAnimationGraph(R"({"parameters": {"armed": 0}, "states": [{"name": "Marche", "animation": "Marche"}],
@@ -353,6 +376,27 @@ namespace {
         Animator::SetParameter(animator, *library.GetGraph("arme.fluxanim"), "armed", 0.0f);
         Animator::Update(scene, library, 0.25);
         CHECK(Close(animator.layers[1].weight, 0.5f));
+
+        // Morceau d'un clip : de 1 à 2 s d'une animation de 4 s, en boucle ; une fois, il dure 1 s.
+        {
+            ModelSkeleton longer = LayeredSkeleton();
+            longer.animations[1].duration = 4.0f;
+            library.SetSkeleton("long.glb", std::move(longer));
+            auto ranged = ParseAnimationGraph(R"({"states": [{"name": "Viser", "animation": "Viser", "start": 1, "end": 2},
+                {"name": "Une fois", "animation": "Viser", "start": 1, "end": 2, "loop": false, "tag": "once"}]})");
+            CHECK(ranged && ranged->layers[0].states[0].start == 1.0f && ranged->layers[0].states[0].end == 2.0f);
+            library.SetGraph("morceau.fluxanim", std::move(*ranged));
+            const Entity aimer = scene.CreateEntity("Viseur");
+            scene.Add<ModelComponent>(aimer).model = "long.glb";
+            scene.Add<AnimatorComponent>(aimer, AnimatorComponent{.graph = "morceau.fluxanim"});
+            AnimatorComponent& aim = scene.Get<AnimatorComponent>(aimer);
+            Animator::Update(scene, library, 0.25);
+            CHECK(aim.clipCount == 1 && !aim.clips[0].loop && Close(aim.clips[0].time, 1.25f));
+            Animator::Update(scene, library, 1.0);
+            CHECK(Close(aim.clips[0].time, 1.25f));
+            CHECK(Close(Animator::GetTagDuration(library, aim, "long.glb", "once"), 1.0f));
+            CHECK(!ParseAnimationGraph(R"({"states": [{"name": "A", "animation": "a", "start": 2, "end": 1}]})"));
+        }
         return true;
     }
 
@@ -424,8 +468,97 @@ namespace {
 
         // Recâblage par nom : la queue, absente du modèle, est laissée.
         const std::vector<ModelAnimation> moved = RetargetAnimations(file, model);
-        CHECK(moved.size() == 2 && moved[0].channels.size() == 2 && moved[0].duration == 2.0f);
-        CHECK(moved[0].channels[0].node == 2 && moved[0].channels[1].node == 1);
+        CHECK(moved.size() == 2 && moved[0].duration == 2.0f);
+        CHECK(std::ranges::none_of(moved[0].channels, [](const AnimationChannel& channel) { return channel.node == 0; })); // l'armature, au-dessus des hanches
+
+        // Autre personnage (Y Bot), dans une autre unité : hanches à 2 au lieu de 1, torse plus long et tourné au repos.
+        {
+            ModelSkeleton tall;
+            tall.nodes.push_back({"mixamorig:Hips", -1, {0, 2, 0}, {}, {1, 1, 1}});
+            const Math::Quaternionf rest = Math::Quaternionf::FromAxisAngle({1, 0, 0}, 0.3f);
+            tall.nodes.push_back({"mixamorig:Spine", 0, {0, 0.6f, 0}, rest, {1, 1, 1}});
+            ModelSkeleton small;
+            small.nodes.push_back({"Hips", -1, {0, 1, 0}, {}, {1, 1, 1}});
+            small.nodes.push_back({"Spine", 0, {0, 0.3f, 0}, {}, {1, 1, 1}});
+            const Math::Quaternionf bend = Math::Quaternionf::FromAxisAngle({0, 0, 1}, 0.5f);
+            const Math::Quaternionf posed = rest * bend; // le torse plié de bend par rapport à son repos
+            ModelAnimation bow{"Saluer", 1.0f, {}};
+            bow.channels.push_back({0, AnimationPath::Translation, AnimationInterpolation::Linear, {0}, {0.4f, 2.2f, 0}});
+            bow.channels.push_back({1, AnimationPath::Translation, AnimationInterpolation::Linear, {0}, {0, 0.6f, 0}});
+            bow.channels.push_back({1, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {posed.x, posed.y, posed.z, posed.w}});
+            tall.animations.push_back(bow);
+            const std::vector<ModelAnimation> fitted = RetargetAnimations(tall, small);
+            CHECK(fitted.size() == 1);
+            // Le torse garde sa longueur ; les hanches se déplacent à l'échelle (moitié) ; le torse tourne comme dans
+            // le fichier, vu de l'armature (la même rotation dans l'espace, quels que soient les axes propres des os).
+            PoseEvaluator fittedPose;
+            fittedPose.Evaluate(small, AnimationSample{&fitted[0], 0.0, false});
+            CHECK(Near(fittedPose.GetLocalPoses()[0].translation, {0.2f, 1.1f, 0}) && Near(fittedPose.GetLocalPoses()[1].translation, {0, 0.3f, 0}));
+            const Math::Quaternionf expected = rest * bend * rest.Conjugate();
+            CHECK(std::abs(std::abs(Math::Dot(fittedPose.GetLocalPoses()[1].rotation, expected)) - 1.0f) < 1.0e-4f);
+        }
+
+        // Personnage exporté de Blender : armature tournée de 90° (rig FBX), compensée sur les hanches ; clip d'assimp
+        // sans cette rotation. Hanches tournées (tir de profil) et torse plié : les mêmes rotations vues du modèle.
+        {
+            const auto same = [](const Math::Quaternionf& a, const Math::Quaternionf& b) { return std::abs(Math::Dot(a, b)) > 0.9999f; };
+            const Math::Quaternionf upright = Math::Quaternionf::FromAxisAngle({1, 0, 0}, 1.5707963f);
+            ModelSkeleton blender;
+            blender.nodes.push_back({"Armature", -1, {}, upright, {1, 1, 1}});
+            blender.nodes.push_back({"mixamorig:Hips", 0, {0, 0, 1}, upright.Conjugate(), {1, 1, 1}});
+            blender.nodes.push_back({"mixamorig:Spine", 1, {0, 0.3f, 0}, {}, {1, 1, 1}});
+            ModelSkeleton clip;
+            clip.nodes.push_back({"mixamorig:Hips", -1, {0, 1, 0}, {}, {1, 1, 1}});
+            clip.nodes.push_back({"mixamorig:Spine", 0, {0, 0.3f, 0}, {}, {1, 1, 1}});
+            const Math::Quaternionf yaw = Math::Quaternionf::FromAxisAngle({0, 1, 0}, 0.94f);
+            const Math::Quaternionf bend = Math::Quaternionf::FromAxisAngle({0, 0, 1}, 0.5f);
+            ModelAnimation profile{"Profil", 1.0f, {}};
+            profile.channels.push_back({0, AnimationPath::Translation, AnimationInterpolation::Linear, {0}, {0, 1, 0}});
+            profile.channels.push_back({0, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {yaw.x, yaw.y, yaw.z, yaw.w}});
+            profile.channels.push_back({1, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {bend.x, bend.y, bend.z, bend.w}});
+            clip.animations.push_back(profile);
+            const std::vector<ModelAnimation> turned = RetargetAnimations(clip, blender);
+            CHECK(turned.size() == 1);
+            PoseEvaluator turnedPose;
+            turnedPose.Evaluate(blender, AnimationSample{&turned[0], 0.0, false});
+            const std::span<const NodePose> poses = turnedPose.GetLocalPoses();
+            const Math::Quaternionf hipsModel = poses[0].rotation * poses[1].rotation;
+            CHECK(same(hipsModel, yaw) && same(hipsModel * poses[2].rotation, yaw * bend));
+        }
+
+        // Même squelette, repos différents : bras en T dans le clip, en A (baissé de 24°) dans le personnage. Le bras
+        // prend la direction du clip, sans l'écart des deux repos.
+        {
+            const Math::Quaternionf lowered = Math::Quaternionf::FromAxisAngle({0, 0, 1}, -0.42f);
+            const auto arm = [](const Math::Quaternionf& rest) {
+                ModelSkeleton skeleton;
+                skeleton.nodes.push_back({"Hips", -1, {0, 1, 0}, {}, {1, 1, 1}});
+                skeleton.nodes.push_back({"RightArm", 0, {0, 0.5f, 0}, rest, {1, 1, 1}});
+                skeleton.nodes.push_back({"RightForeArm", 1, {0.3f, 0, 0}, {}, {1, 1, 1}});
+                skeleton.nodes.push_back({"RightHand", 2, {0.25f, 0, 0}, {}, {1, 1, 1}});
+                return skeleton;
+            };
+            ModelSkeleton tPose = arm({});
+            const ModelSkeleton aPose = arm(lowered);
+            const Math::Quaternionf raise = Math::Quaternionf::FromAxisAngle({0, 1, 0}, -1.2f); // le bras vers l'avant
+            const Math::Quaternionf bent = Math::Quaternionf::FromAxisAngle({0, 1, 0}, 0.4f);
+            ModelAnimation aim{"Viser", 1.0f, {}};
+            aim.channels.push_back({0, AnimationPath::Translation, AnimationInterpolation::Linear, {0}, {0, 1, 0}});
+            aim.channels.push_back({1, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {raise.x, raise.y, raise.z, raise.w}});
+            aim.channels.push_back({2, AnimationPath::Rotation, AnimationInterpolation::Linear, {0}, {bent.x, bent.y, bent.z, bent.w}});
+            tPose.animations.push_back(aim);
+            const std::vector<ModelAnimation> aimed = RetargetAnimations(tPose, aPose);
+            CHECK(aimed.size() == 1);
+            PoseEvaluator clipPose;
+            clipPose.Evaluate(tPose, AnimationSample{&tPose.animations[0], 0.0, false});
+            PoseEvaluator aimedPose;
+            aimedPose.Evaluate(aPose, AnimationSample{&aimed[0], 0.0, false});
+            for (std::size_t n : {2u, 3u}) {
+                const auto a = clipPose.GetNodeMatrices()[n].columns[3];
+                const auto b = aimedPose.GetNodeMatrices()[n].columns[3];
+                CHECK(Near(Vector3f{a[0], a[1], a[2]}, {b[0], b[1], b[2]}));
+            }
+        }
 
         AnimationLibrary library;
         library.SetSkeleton("soldat.glb", model);
@@ -436,6 +569,19 @@ namespace {
         CHECK(set && set->animations.size() == 3 && set->Find("Marche") == 1 && set->Find("Repos") == 0 && set->Find("") == 0);
         CHECK(library.FindAnimationSet("soldat.glb", "soldat.fluxanim") == set);
         CHECK(library.GetAnimationSet("soldat.glb", "")->animations.size() == 1);
+        // Seule dans son fichier (export Mixamo, toujours nommée « mixamo.com ») : le nom du fichier.
+        ModelSkeleton single = file;
+        single.animations = {{"mixamo.com", 1.0f, {}}};
+        library.SetSkeleton("Animations/Mixamo/Viser.glb", single);
+        auto aimGraph = ParseAnimationGraph(R"({"files": ["Animations/Mixamo/Viser.glb"], "states": [{"name": "V", "animation": "Viser"}]})");
+        CHECK(aimGraph);
+        library.SetGraph("viser.fluxanim", std::move(*aimGraph));
+        set = library.GetAnimationSet("soldat.glb", "soldat.fluxanim"); // SetGraph a oublié les listes
+        const AnimationSet* aimSet = library.GetAnimationSet("soldat.glb", "viser.fluxanim");
+        CHECK(aimSet && aimSet->Find("Viser") == 1 && aimSet->Find("mixamo.com") < 0);
+        // Noms tapés à la main : sans le préfixe du logiciel.
+        CHECK(FindNode(file, "Spine") == 2 && FindNode(file, "mixamorig:Spine") == 2 && FindNode(model, "mixamorig:Hips") == 1);
+        CHECK(FindNode(model, "Queue") < 0);
 
         // L'animateur joue la marche du fichier : son clip est l'indice dans la liste, au-delà de celles du modèle.
         Scene scene;
@@ -537,7 +683,7 @@ namespace {
 
         // Paramètres posés par le jeu : seulement ceux que le graphe déclare.
         CHECK(Animator::SetParameter(scene.Get<AnimatorComponent>(hero), *graph, "airTime", 0.0f));
-        CHECK(!Animator::SetParameter(scene.Get<AnimatorComponent>(hero), *graph, "armed", 1.0f));
+        CHECK(!Animator::SetParameter(scene.Get<AnimatorComponent>(hero), *graph, "inconnu", 1.0f));
 
         // Objet qui n'est pas un personnage, sans graphe : son animation (la première) tourne à sa vitesse.
         const Entity door = scene.CreateEntity("Porte");

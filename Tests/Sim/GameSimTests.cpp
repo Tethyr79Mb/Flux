@@ -3,8 +3,11 @@
 #include "Check.hpp"
 
 #include "GameSim.hpp"
+#include "HandWeapons.hpp"
 #include "SpawnPoint.hpp"
 
+#include "Flux/Animation/AnimationGraph.hpp"
+#include "Flux/Animation/AnimationLibrary.hpp"
 #include "Flux/Core/Simulation.hpp"
 #include "Flux/Scene/Scene.hpp"
 #include "Flux/Scene/SceneSerializer.hpp"
@@ -61,6 +64,65 @@ namespace {
         Game::UnregisterSimulation(simulation);
         return true;
     }
+
+    // Pistolet à pied : 1 le sort (dessiné, armed à 1 sur le graphe), un clic tire un coup vers le centre de la vue
+    // (fire à 1 ce pas seulement).
+    bool HandWeapon() {
+        Simulation simulation;
+        const std::shared_ptr<Game::SimState> state = Game::RegisterSimulation(simulation);
+        auto graph = ParseAnimationGraph(R"({"parameters": {"armed": 0, "aiming": 0, "fire": 0}, "states": [{"name": "A", "animation": "a"}]})");
+        CHECK(graph.has_value());
+        Scene& scene = simulation.GetScene();
+        const Entity hero = scene.CreateEntity("Héros");
+        scene.Add<CharacterComponent>(hero);
+        scene.Add<AnimatorComponent>(hero, AnimatorComponent{.graph = "perso.fluxanim"});
+        const Entity gun = scene.CreateEntity("Pistolet", hero);
+        scene.Get<TransformComponent>(gun).position = {0.3, 1.4, -0.4};
+        scene.Add<ModelComponent>(gun).model = "pistolet.glb";
+        scene.Add<Game::HandWeaponComponent>(gun);
+        simulation.Start();
+        simulation.GetAnimations().SetGraph("perso.fluxanim", std::move(*graph)); // après Start, qui vide la bibliothèque
+        const Game::HandWeapons::Actions& actions = state->handWeapons;
+        CHECK(actions.draw != NoInputAction && actions.fire != NoInputAction && actions.aim != NoInputAction);
+
+        const auto step = [&](std::initializer_list<InputActionId> pressed, std::initializer_list<InputActionId> held = {}) {
+            PlayerCommand command;
+            command.viewPosition = Math::WorldPosition{};
+            command.viewPosition += Math::Vector3d{0.0, 1.6, 0.0};
+            command.viewForward = {0.0f, 0.0f, -1.0f};
+            for (const InputActionId action : pressed) {
+                command.pressed.set(action);
+                command.held.set(action);
+            }
+            for (const InputActionId action : held) {
+                command.held.set(action);
+            }
+            simulation.SetLocalCommand(command);
+            simulation.Step(SimulationClock::StepSeconds);
+        };
+        const AnimationGraph& read = *simulation.GetAnimations().GetGraph("perso.fluxanim");
+        const auto parameter = [&](std::string_view name) {
+            return scene.Get<AnimatorComponent>(hero).parameters[static_cast<std::size_t>(read.FindParameter(name))];
+        };
+        step({});
+        CHECK(!scene.Get<ModelComponent>(gun).visible && parameter("armed") == 0.0f); // rangé au départ
+        CHECK(simulation.GetPlayer() == hero);
+        step({actions.fire});
+        CHECK(simulation.GetProjectiles().empty()); // rangé : ne tire pas
+        step({actions.draw});
+        CHECK(scene.Get<ModelComponent>(gun).visible && parameter("armed") == 1.0f);
+        step({actions.fire}, {actions.aim});
+        CHECK(simulation.GetProjectiles().size() == 1 && parameter("fire") == 1.0f && parameter("aiming") == 1.0f);
+        const Projectile& shot = simulation.GetProjectiles().front();
+        CHECK(shot.ship == hero && shot.velocity.z < 0.0f && shot.velocity.y > 0.0f); // vers le point visé, plus haut
+        step({actions.fire}); // trop tôt après le premier (4 coups par seconde)
+        CHECK(simulation.GetProjectiles().size() == 1 && parameter("fire") == 0.0f && parameter("aiming") == 0.0f);
+        // Fin du jeu : de nouveau visible, comme posé dans l'éditeur.
+        simulation.Stop();
+        CHECK(scene.Get<ModelComponent>(gun).visible);
+        Game::UnregisterSimulation(simulation);
+        return true;
+    }
 }
 
 bool RunGameSimTests() {
@@ -110,5 +172,5 @@ bool RunGameSimTests() {
     // Retirés : les systèmes ne gardent plus l'état.
     Game::UnregisterSimulation(first);
     CHECK(state.use_count() == 1);
-    return SpawnPoints();
+    return SpawnPoints() && HandWeapon();
 }

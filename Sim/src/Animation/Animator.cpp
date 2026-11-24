@@ -7,6 +7,7 @@
 #include "Flux/Scene/Scene.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <span>
 #include <tuple>
@@ -63,6 +64,8 @@ namespace Flux::Animator {
             std::int16_t indices[2] = {-1, -1}; // dans AnimationSet::animations
             float weights[2] = {};
             float phases[2] = {}; // décalages des cycles
+            float starts[2] = {}; // morceau joué : de starts à starts + lengths (Graph::State::start, end)
+            float lengths[2] = {};
             int count = 0;
             float scale = 1.0f;
             bool loop = true;
@@ -73,6 +76,16 @@ namespace Flux::Animator {
             const int index = set.Find(name);
             clips.indices[slot] = static_cast<std::int16_t>(index);
             clips.animations[slot] = index >= 0 ? set.animations[static_cast<std::size_t>(index)] : nullptr;
+            clips.lengths[slot] = clips.animations[slot] ? clips.animations[slot]->duration : 0.0f;
+        }
+
+        // Morceau de l'animation du slot gardé par l'état, borné à sa durée.
+        void Trim(FadeClips& clips, int slot, const Graph::State& state) {
+            const float duration = clips.lengths[slot];
+            const float start = std::min(state.start, duration);
+            const float end = state.end > 0.0f ? std::min(state.end, duration) : duration;
+            clips.starts[slot] = start;
+            clips.lengths[slot] = std::max(end - start, 0.0f);
         }
 
         FadeClips ClipsOf(const AnimatorComponent& animator, const Graph::StateMachine* machine, const AnimationSet& set,
@@ -89,6 +102,7 @@ namespace Flux::Animator {
             const Mix mix = MixOf(state, fade.blend);
             for (int i = 0; i < mix.count; ++i) {
                 Resolve(clips, i, set, mix.points[i]->animation);
+                Trim(clips, i, state);
                 clips.weights[i] = mix.weights[i];
                 clips.phases[i] = mix.points[i]->phase;
             }
@@ -103,7 +117,7 @@ namespace Flux::Animator {
         float RateOf(const FadeClips& clips, float speed) {
             float duration = 0.0f;
             for (int i = 0; i < clips.count; ++i) {
-                duration += clips.animations[i] ? clips.weights[i] * clips.animations[i]->duration : 0.0f;
+                duration += clips.weights[i] * clips.lengths[i];
             }
             return duration > 0.0f ? speed * clips.scale / duration : 0.0f;
         }
@@ -217,11 +231,6 @@ namespace Flux::Animator {
             layer.fades[0].fade = 1.0f;
         }
 
-        int FindNode(const ModelSkeleton& skeleton, std::string_view name) {
-            const auto found = std::ranges::find(skeleton.nodes, name, &SkeletonNode::name);
-            return found != skeleton.nodes.end() ? static_cast<int>(found - skeleton.nodes.begin()) : -1;
-        }
-
         // Os du masque d'une couche, -1 pour tout le corps, NoMask si l'os n'est pas dans ce squelette (couche coupée :
         // un masque mal nommé ne doit pas animer tout le corps).
         constexpr std::int16_t NoMask = -2;
@@ -249,6 +258,7 @@ namespace Flux::Animator {
                 if (graph) {
                     layer.weight = TargetWeight(animator, graph->layers[l], l);
                     layer.maskNode = l == 0 ? -1 : MaskOf(graph->layers[l], *set.skeleton);
+                    layer.modelSpace = graph->layers[l].modelSpace;
                 }
             }
             animator.started = true;
@@ -317,13 +327,17 @@ namespace Flux::Animator {
                     if (!clips.animations[i] || weight < MinWeight || animator.clipCount == AnimatorComponent::MaxClips) {
                         continue;
                     }
-                    const ModelAnimation& animation = *clips.animations[i];
-                    const float phase = clips.loop ? fade.phase + clips.phases[i] : std::clamp(fade.phase, 0.0f, 1.0f);
+                    // Le cycle est ramené ici dans le morceau de l'état : l'échantillonnage n'a plus qu'à borner.
+                    float phase = clips.loop ? fade.phase + clips.phases[i] : std::clamp(fade.phase, 0.0f, 1.0f);
+                    const bool whole = clips.starts[i] == 0.0f && clips.lengths[i] == clips.animations[i]->duration;
+                    if (clips.loop && !whole) {
+                        phase -= std::floor(phase);
+                    }
                     animator.clips[animator.clipCount++] = {
                         .animation = clips.indices[i],
                         .layer = static_cast<std::uint8_t>(index),
-                        .loop = clips.loop,
-                        .time = phase * animation.duration,
+                        .loop = clips.loop && whole,
+                        .time = clips.starts[i] + phase * clips.lengths[i],
                         .weight = weight,
                     };
                 }
@@ -398,7 +412,7 @@ namespace Flux::Animator {
         std::size_t layerCount = 0;
         for (std::size_t l = 1; l < animator->layerCount; ++l) {
             const AnimatorLayer& layer = animator->layers[l];
-            layers[layerCount++] = {layer.maskNode, layer.maskNode >= -1 ? layer.weight : 0.0f};
+            layers[layerCount++] = {layer.maskNode, layer.maskNode >= -1 ? layer.weight : 0.0f, layer.modelSpace};
         }
         evaluator.EvaluateLayers(skeleton, std::span(samples).first(count), std::span(layers).first(layerCount));
     }
@@ -427,7 +441,12 @@ namespace Flux::Animator {
             const int index = set->Find(found.points.front().animation);
             const ModelAnimation* animation = index >= 0 ? set->animations[static_cast<std::size_t>(index)] : nullptr;
             const float speed = found.speed * animator.speed;
-            return animation && speed > 0.0f ? animation->duration / speed : 0.0f;
+            if (!animation || speed <= 0.0f) {
+                return 0.0f;
+            }
+            const float start = std::min(found.start, animation->duration);
+            const float end = found.end > 0.0f ? std::min(found.end, animation->duration) : animation->duration;
+            return std::max(end - start, 0.0f) / speed;
         }
         return 0.0f;
     }

@@ -127,10 +127,14 @@ namespace Flux {
                 return std::unexpected("un état sans « name »");
             }
             const auto context = [&state](const std::string& error) { return std::unexpected(std::format("état « {} » : {}", state.name, error)); };
-            for (Result read : {ReadText(entry, "tag", state.tag), ReadNumber(entry, "speed", state.speed), ReadBool(entry, "loop", state.loop)}) {
+            for (Result read : {ReadText(entry, "tag", state.tag), ReadNumber(entry, "speed", state.speed), ReadBool(entry, "loop", state.loop),
+                                 ReadNumber(entry, "start", state.start), ReadNumber(entry, "end", state.end)}) {
                 if (!read) {
                     return context(read.error());
                 }
+            }
+            if (state.start < 0.0f || (state.end > 0.0f && state.end <= state.start)) {
+                return context("« start » doit être positif et « end » plus grand que « start »");
             }
             std::string single;
             if (auto read = ReadText(entry, "animation", single); !read) {
@@ -255,12 +259,14 @@ namespace Flux {
             return {};
         }
 
-        // Couche par-dessus le corps : { "name", "mask": "os", "weight": "paramètre" ou nombre, "fade", "states", ... }.
+        // Couche par-dessus le corps : { "name", "mask": "os", "weight": "paramètre" ou nombre, "fade", "modelSpace",
+        // "states", ... }.
         Result ReadLayer(const Json& entry, const Graph& graph, Graph::Layer& layer) {
             if (!entry.is_object()) {
                 return std::unexpected("une couche est un objet { \"name\": ..., \"mask\": ..., \"states\": [...] }");
             }
-            for (Result read : {ReadText(entry, "name", layer.name), ReadText(entry, "mask", layer.mask), ReadNumber(entry, "fade", layer.fade)}) {
+            for (Result read : {ReadText(entry, "name", layer.name), ReadText(entry, "mask", layer.mask), ReadNumber(entry, "fade", layer.fade),
+                                 ReadBool(entry, "modelSpace", layer.modelSpace)}) {
                 if (!read) {
                     return read;
                 }

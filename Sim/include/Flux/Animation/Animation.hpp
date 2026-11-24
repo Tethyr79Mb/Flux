@@ -20,6 +20,10 @@ namespace Flux {
         Math::Vector3f scale{1.0f, 1.0f, 1.0f};
     };
 
+    // Nœud de ce nom, sinon du même nom sans l'espace de noms d'un logiciel (« mixamorig:Hips » vaut « Hips ») ; -1
+    // s'il n'y en a pas. Pour les noms tapés à la main (masques, os d'accroche) et le recâblage des animations.
+    FLUX_SIM_API int FindNode(const ModelSkeleton& skeleton, std::string_view name);
+
     // Animation du fichier par son nom ; nom vide : la première. nullptr s'il n'y en a pas.
     FLUX_SIM_API const ModelAnimation* FindAnimation(const ModelSkeleton& skeleton, std::string_view name);
 
@@ -42,6 +46,9 @@ namespace Flux {
     {
         int node = -1;
         float weight = 1.0f;
+        // Rotation de node vue du modèle : node prend l'orientation qu'il a dans la couche, quels que soient ses
+        // parents dans la pose du dessous (Graph::Layer::modelSpace).
+        bool modelSpace = false;
     };
 
     // Calcule la pose d'un squelette. Garde ses tableaux d'une fois sur l'autre : aucune allocation une fois rodé.

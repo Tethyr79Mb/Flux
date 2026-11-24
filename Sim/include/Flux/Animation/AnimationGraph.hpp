@@ -45,6 +45,11 @@ namespace Flux {
             int blendParameter = -1;
             float speed = 1.0f; // vitesse de lecture
             bool loop = true;   // sinon jouée une fois, finie sur sa dernière image
+            // Morceau des animations joué, en secondes : de start à end (0 ou au-delà de la durée : jusqu'à la fin).
+            // Garde la partie utile d'un clip trop long sans toucher au fichier (« Pistol Aim » de Mixamo vise
+            // 1,25 s puis baisse l'arme).
+            float start = 0.0f;
+            float end = 0.0f;
         };
 
         enum class Compare : std::uint8_t { Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual };
@@ -90,6 +95,10 @@ namespace Flux {
             int weightParameter = -1;
             float weight = 1.0f; // sans paramètre
             float fade = 0.25f;
+            // Rotation du premier os du masque prise dans le repère du modèle et non par rapport à son parent : le buste
+            // garde l'orientation du clip même quand les hanches de la couche du dessous regardent ailleurs (clip de
+            // tir de profil, hanches tournées, joué sur la marche).
+            bool modelSpace = false;
         };
 
         static constexpr std::size_t MaxLayers = 4;
@@ -97,8 +106,9 @@ namespace Flux {
         std::vector<Parameter> parameters;
         std::vector<Layer> layers; // au moins une : le corps entier
         // Fichiers dont les animations s'ajoutent à celles du modèle (chemins relatifs aux assets), par exemple une
-        // animation Mixamo par fichier : même squelette, os reconnus par leur nom. Un nom déjà pris est celui du
-        // modèle, puis du premier fichier qui l'a.
+        // animation Mixamo par fichier : même squelette, os reconnus par leur nom. L'animation seule dans son fichier
+        // prend le nom du fichier (Viser.glb : « Viser »). Un nom déjà pris est celui du modèle, puis du premier
+        // fichier qui l'a.
         std::vector<std::string> files;
 
         // Indice du paramètre de ce nom, -1 s'il n'y en a pas.
