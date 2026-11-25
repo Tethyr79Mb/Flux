@@ -117,7 +117,12 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ⬜ Mise à l'échelle DPI (écrans 125 %, 150 %).
 - ⬜ Éditeur de matériaux (Bruno, 2026-11-18) : fichiers matériau (couleur de base, normale, rugosité, métal, émission) créés dans le Contenu et édités dans l'inspecteur, glissés sur un objet ou sur une partie précise d'un modèle (sous-mesh) pour remplacer le matériau du glTF.
 - ⬜ Éditeur de terrain des planètes (réglages en direct avec aperçu).
-- ⬜ Profileur dans l'éditeur (historique des temps CPU / GPU).
+- ⬜ Panneau du graphe de génération procédurale (Bruno, 2026-11-25, après celui des missions ; voir `Engine/ROADMAP.md`) : même widget de nœuds, aperçu en direct sur la planète.
+- ⬜ Profileur dans l'éditeur, façon Unreal Insights (Bruno, 2026-11-25) : historique des temps CPU par fil et GPU par passe, image lente choisie et détaillée.
+- ⬜ Éditeur de particules, façon Niagara (Bruno, 2026-11-25) : émetteurs et modules réglés avec aperçu en direct (réacteurs, explosions, brume des cascades, poussière d'atterrissage).
+- ⬜ Séquenceur de cinématiques, façon Sequencer (Bruno, 2026-11-25) : pistes de caméras, objets, animations et sons sur une ligne de temps.
+- ⬜ Peinture du terrain et de la végétation à la main, par-dessus le procédural, façon Foliage (Bruno, 2026-11-25) : seules les retouches sont enregistrées.
+- ⬜ Modélisation rapide pour bloquer les niveaux, façon Modeling Mode (Bruno, 2026-11-25) : boîtes, cylindres, extrusions ; le modèle final reste fait dans Blender.
 
 ## Dettes et limites connues
 - Le mode Jouer copie toute la scène en JSON : lent sur une grosse scène.
