@@ -15,6 +15,7 @@ namespace Flux {
         // 0 est le matériau blanc sans image).
         constexpr std::uint32_t MaxImages = 4096;
         constexpr std::uint32_t MaxMaterials = 4096;
+        constexpr std::uint32_t MaxLayers = 4096;
         // Pages de géométrie : de quoi tenir la station et quelques vaisseaux dans une seule (32 + 16 Mo) ; les
         // modèles animés à part (os et poids à côté de chaque sommet). Un modèle plus grand a sa propre page.
         constexpr std::uint32_t PageVertices = 1u << 20;
@@ -81,9 +82,48 @@ namespace Flux {
             // Cases de la table des images (0 : blanche) : couleur de base, émissive, métal-rugosité, normales,
             // occlusion.
             std::array<std::uint32_t, 5> images;
-            std::array<std::uint32_t, 2> padding;
+            // Couches (MaterialLayerData) : cases [firstLayer, firstLayer + layerCount), masque dans la table des
+            // images (0 : blanc, couches partout).
+            std::uint32_t firstLayer;
+            std::uint32_t layerCount;
+            std::uint32_t maskImage;
+            std::array<std::uint32_t, 3> padding;
         };
-        static_assert(sizeof(MaterialData) == 80);
+        static_assert(sizeof(MaterialData) == 96);
+
+        // Doit correspondre à MaterialLayerData dans shaders/Mesh.slang : une couche d'un matériau multicouche
+        // (ModelMaterialLayer).
+        struct MaterialLayerData
+        {
+            Math::LinearColor tint; // rgb ; a : opacité de la couche
+            float metallic;
+            float roughness;
+            float tiling;
+            float normalScale; // 0 : pas de relief
+            float sharpness;
+            float heightInfluence;
+            std::uint32_t colorImage; // cases de la table des images (0 : blanche)
+            std::uint32_t dataImage;
+            std::uint32_t maskChannel; // 0 à 3 ; 4 : partout
+            std::array<std::uint32_t, 3> padding;
+        };
+        static_assert(sizeof(MaterialLayerData) == 64);
+
+        // Date la plus récente du fichier et de ceux lus avec lui ; un fichier absent compte pour rien (son apparition
+        // change la date).
+        std::filesystem::file_time_type LatestWriteTime(const std::filesystem::path& path,
+                                                        const std::vector<std::filesystem::path>& dependencies,
+                                                        std::error_code& error) {
+            std::filesystem::file_time_type latest = std::filesystem::last_write_time(path, error);
+            for (const std::filesystem::path& dependency : dependencies) {
+                std::error_code missing;
+                const std::filesystem::file_time_type time = std::filesystem::last_write_time(dependency, missing);
+                if (!missing) {
+                    latest = std::max(latest, time);
+                }
+            }
+            return latest;
+        }
 
         // Indices des images d'un matériau dans MaterialData::images.
         constexpr std::size_t BaseColorImage = 0;
@@ -179,6 +219,8 @@ namespace Flux {
             imageCount = std::exchange(other.imageCount, 0);
             firstMaterial = other.firstMaterial;
             materialCount = std::exchange(other.materialCount, 0);
+            firstLayer = other.firstLayer;
+            layerCount = std::exchange(other.layerCount, 0);
             firstMeshlet = other.firstMeshlet;
             meshletCount = std::exchange(other.meshletCount, 0);
             firstMeshletWord = other.firstMeshletWord;
@@ -215,9 +257,10 @@ namespace Flux {
         // Les cases rendues gardent leur image jusqu'à ce qu'une autre la remplace : aucun matériau ne les lit plus.
         m_imageSlots.Free(resources.firstImage, resources.imageCount);
         m_materialSlots.Free(resources.firstMaterial, resources.materialCount);
+        m_layerSlots.Free(resources.firstLayer, resources.layerCount);
         page.meshletRanges.Free(resources.firstMeshlet, resources.meshletCount);
         page.meshletDataRanges.Free(resources.firstMeshletWord, resources.meshletWordCount);
-        resources.vertexCount = resources.indexCount = resources.imageCount = resources.materialCount = 0;
+        resources.vertexCount = resources.indexCount = resources.imageCount = resources.materialCount = resources.layerCount = 0;
         resources.meshletCount = resources.meshletWordCount = 0;
         resources.images.clear();
     }
@@ -227,9 +270,10 @@ namespace Flux {
         cache->m_meshlets = device.HasMeshShaders();
         cache->m_rayTracing = device.HasRayTracing();
 
-        // Répété (les UV des modèles sortent souvent de [0, 1]), filtré entre les mips.
+        // Répété (les UV des modèles sortent souvent de [0, 1]), filtré entre les mips, anisotrope : les couches répétées
+        // des matériaux multicouches restent nettes sur une coque vue de biais.
         auto sampler = device.CreateSampler({.filter = RHI::Filter::Linear, .mipFilter = RHI::Filter::Linear,
-                                             .address = RHI::AddressMode::Repeat});
+                                             .address = RHI::AddressMode::Repeat, .anisotropy = 16.0f});
         if (!sampler) {
             return std::unexpected(sampler.error());
         }
@@ -247,7 +291,8 @@ namespace Flux {
         cache->m_groundLayout = std::move(*groundLayout);
         constexpr std::array sceneBindings{
             RHI::Binding{ImageTableSlot, RHI::BindingType::TextureTable, RHI::ShaderStage::Fragment, MaxImages},
-            RHI::Binding{MaterialTableSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment}};
+            RHI::Binding{MaterialTableSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment},
+            RHI::Binding{LayerTableSlot, RHI::BindingType::StorageBuffer, RHI::ShaderStage::Fragment}};
         auto sceneLayout = device.CreateBindGroupLayout({.bindings = sceneBindings, .maxGroups = 1});
         if (!sceneLayout) {
             return std::unexpected(sceneLayout.error());
@@ -276,21 +321,28 @@ namespace Flux {
         }
 
         // Tables : l'image blanche et le matériau blanc en case 0, toujours remplies.
-        const MaterialData whiteMaterial{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, {}, {}};
+        const MaterialData whiteMaterial{{1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, {}, 0, 0, 0, {}};
         std::vector<MaterialData> materials(MaxMaterials, whiteMaterial);
         auto table = device.CreateBuffer({MaxMaterials * sizeof(MaterialData), RHI::BufferUsage::Storage}, materials.data());
         if (!table) {
             return std::unexpected(table.error());
         }
         cache->m_materialTable = std::move(*table);
+        auto layerTable = device.CreateBuffer({MaxLayers * sizeof(MaterialLayerData), RHI::BufferUsage::Storage});
+        if (!layerTable) {
+            return std::unexpected(layerTable.error());
+        }
+        cache->m_layerTable = std::move(*layerTable);
         cache->m_sceneGroup = device.CreateBindGroup(*cache->m_sceneLayout);
         if (!cache->m_sceneGroup) {
             return std::unexpected("allocation du groupe des tables de matériaux");
         }
         cache->m_sceneGroup->SetTableTexture(ImageTableSlot, 0, *cache->m_whiteImage, *cache->m_sampler);
         cache->m_sceneGroup->SetBuffer(MaterialTableSlot, *cache->m_materialTable);
+        cache->m_sceneGroup->SetBuffer(LayerTableSlot, *cache->m_layerTable);
         cache->m_imageSlots = RangeAllocator(MaxImages);
         cache->m_materialSlots = RangeAllocator(MaxMaterials);
+        cache->m_layerSlots = RangeAllocator(MaxLayers);
         cache->m_imageSlots.Allocate(1);
         cache->m_materialSlots.Allocate(1);
 
@@ -454,6 +506,11 @@ namespace Flux {
             mark(dataImages, source.metallicRoughnessImage);
             mark(dataImages, source.normalImage);
             mark(dataImages, source.occlusionImage);
+            mark(dataImages, source.layerMaskImage);
+            for (const ModelMaterialLayer& layer : source.layers) {
+                mark(colorImages, layer.colorImage);
+                mark(dataImages, layer.dataImage);
+            }
         }
         const auto wanted = static_cast<std::uint32_t>(std::ranges::count(colorImages, true) + std::ranges::count(dataImages, true));
         const std::optional<std::uint32_t> firstImage = m_imageSlots.Allocate(wanted);
@@ -519,6 +576,19 @@ namespace Flux {
             resources.firstMaterial = firstMaterial.value_or(0);
             resources.materialCount = materialCount;
         }
+        // Couches des matériaux multicouches, à la suite dans leur table.
+        std::uint32_t wantedLayers = 0;
+        for (const ModelMaterial& source : data.materials) {
+            wantedLayers += static_cast<std::uint32_t>(std::min(source.layers.size(), MaxMaterialLayers));
+        }
+        const std::optional<std::uint32_t> firstLayer = m_layerSlots.Allocate(wantedLayers);
+        if (wantedLayers > 0 && !firstLayer) {
+            Log::Warning("modèle {} : plus de {} couches chargées, ses matériaux restent sans couche", name, MaxLayers);
+        } else {
+            resources.firstLayer = firstLayer.value_or(0);
+            resources.layerCount = wantedLayers;
+        }
+        std::vector<MaterialLayerData> layers;
         std::vector<MaterialData> table;
         for (std::uint32_t m = 0; m < data.materials.size(); ++m) {
             const ModelMaterial& source = data.materials[m];
@@ -539,16 +609,40 @@ namespace Flux {
                 slotFor(dataSlots, source.occlusionImage)};
             material.normalScale = images[NormalImage] != 0 ? source.normalScale : 0.0f;
             material.occlusionStrength = images[OcclusionImage] != 0 ? source.occlusionStrength : 0.0f;
+            const auto layerStart = static_cast<std::uint32_t>(layers.size());
+            if (resources.layerCount > 0) {
+                for (std::size_t l = 0; l < std::min(source.layers.size(), MaxMaterialLayers); ++l) {
+                    const ModelMaterialLayer& layer = source.layers[l];
+                    const std::uint32_t dataImage = slotFor(dataSlots, layer.dataImage);
+                    layers.push_back({{layer.tint.r, layer.tint.g, layer.tint.b, layer.opacity},
+                                      layer.metallic,
+                                      layer.roughness,
+                                      layer.tiling,
+                                      dataImage != 0 ? layer.normalScale : 0.0f,
+                                      layer.sharpness,
+                                      layer.heightInfluence,
+                                      slotFor(colorSlots, layer.colorImage),
+                                      dataImage,
+                                      layer.maskChannel >= 0 && layer.maskChannel < 4 ? static_cast<std::uint32_t>(layer.maskChannel) : 4u,
+                                      {}});
+                }
+            }
+            const auto layerCount = static_cast<std::uint32_t>(layers.size()) - layerStart;
             if (resources.materialCount > 0) {
                 material.index = resources.firstMaterial + m;
                 table.push_back({material.baseColor, material.emissive, material.metallic, material.roughness, material.normalScale,
-                                 material.occlusionStrength, material.alphaCutoff, images, {}});
+                                 material.occlusionStrength, material.alphaCutoff, images, resources.firstLayer + layerStart,
+                                 layerCount, slotFor(dataSlots, source.layerMaskImage), {}});
             }
             model.materials.push_back(material);
         }
         if (!table.empty() && !m_device.WriteBuffer(*m_materialTable, std::uint64_t{resources.firstMaterial} * sizeof(MaterialData),
                                                     table.data(), table.size() * sizeof(MaterialData), false)) {
             return fail("envoi des matériaux au GPU");
+        }
+        if (!layers.empty() && !m_device.WriteBuffer(*m_layerTable, std::uint64_t{resources.firstLayer} * sizeof(MaterialLayerData),
+                                                     layers.data(), layers.size() * sizeof(MaterialLayerData), false)) {
+            return fail("envoi des couches des matériaux au GPU");
         }
         model.primitives = data.primitives;
         model.shadowPrimitives = data.shadowPrimitives;
@@ -619,9 +713,11 @@ namespace Flux {
             GpuModel& model = *installing.target;
             const std::filesystem::file_time_type writeTime = model.writeTime;
             const std::chrono::steady_clock::time_point checked = model.checked;
+            std::vector<std::filesystem::path> dependencies = std::move(model.dependencies);
             GpuModel old = std::exchange(model, std::move(installing.model));
             model.writeTime = writeTime;
             model.checked = checked;
+            model.dependencies = std::move(dependencies);
             if (old.loaded) {
                 Retire(std::move(old));
             }
@@ -645,6 +741,7 @@ namespace Flux {
         }
         GpuModel& model = found->second;
         const std::string name = Platform::ToUtf8(Platform::PathFromUtf8(result.key).filename());
+        model.dependencies = std::move(result.dependencies);
         if (!result.data) {
             model.loading = false;
             Log::Error("modèle {}", result.data.error());
@@ -671,11 +768,15 @@ namespace Flux {
         return Refresh(found->first, path, found->second, created);
     }
 
-    const GpuModel* ModelCache::Find(const std::filesystem::path& assetsDirectory, std::string_view relativePath) {
-        if (assetsDirectory != m_knownDirectory) {
-            m_knownDirectory = assetsDirectory;
+    void ModelCache::SetAssetsDirectory(const std::filesystem::path& directory) {
+        if (directory != m_knownDirectory) {
+            m_knownDirectory = directory;
             m_known.clear();
         }
+    }
+
+    const GpuModel* ModelCache::Find(const std::filesystem::path& assetsDirectory, std::string_view relativePath) {
+        SetAssetsDirectory(assetsDirectory);
         if (const auto known = m_known.find(relativePath); known != m_known.end()) {
             return Refresh(*known->second.key, known->second.path, *known->second.model, false);
         }
@@ -693,12 +794,12 @@ namespace Flux {
         if (created || (!model.loading && now - model.checked >= CheckInterval)) {
             model.checked = now;
             std::error_code error;
-            const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(path, error);
+            const std::filesystem::file_time_type writeTime = LatestWriteTime(path, model.dependencies, error);
             // Fichier absent : essayé une fois (pour le signaler), puis de nouveau quand il apparaît.
             if (created || (!error && writeTime != model.writeTime)) {
                 model.writeTime = error ? std::filesystem::file_time_type{} : writeTime;
                 model.loading = true;
-                m_loader.Request(key, path);
+                m_loader.Request(key, path, m_knownDirectory);
             }
         }
         return model.loaded ? &model : nullptr;

@@ -264,6 +264,13 @@ ombres n'ont pas besoin du matériau). Un modèle fixe de plus de 32 m est déco
 selon le centre de chaque triangle), chacun avec sa boîte : `MeshRenderer` les écarte un par un du champ et des
 cascades (`ClusterDraw`), une station n'est dessinée que là où on la voit.
 
+Matériaux multicouches (`Assets/LayeredMaterial.hpp`) : la liste voisine d'un modèle (`Raie.materiaux.json`) branche
+un fichier `.fluxmat` sur un matériau du glTF par son nom, avant `PrepareModel` (qui réunit les matériaux identiques et
+perd les noms). Le fil de lecture (`ModelLoader`) assemble les images de chaque couche en deux (couleur et hauteur ;
+normale, rugosité, métal) ; `ModelCache` range les couches dans leur table (groupe 2, `MaterialLayerData`) et relit le
+modèle quand la liste, un `.fluxmat` ou une image change. Le shader les pose sur le matériau avant le G-buffer
+(`ApplyMaterialLayers`, `Mesh.slang`) : le G-buffer et l'éclairage ne savent rien des couches.
+
 Chaque primitive d'un modèle fixe est ensuite découpée en paquets de triangles voisins (`ModelMeshlet`, 64 sommets
 et 124 triangles au plus, meshoptimizer), première étape du rendu des modèles piloté par le GPU. Un paquet porte sa
 sphère et le cône de ses normales (écarté de dos si `dot(centre − caméra, axe) ≥ coupure × distance + rayon` ; coupure

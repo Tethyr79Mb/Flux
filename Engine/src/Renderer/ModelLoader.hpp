@@ -31,6 +31,8 @@ namespace Flux {
             // Niveaux de mip rangés à imageOffsets[i] avec l'image (BuildMipChain : feuillage) ; 1 : niveau 0 seul, le
             // GPU calcule les autres.
             std::vector<std::uint32_t> imageLevels;
+            // Fichiers lus en plus du modèle (matériaux multicouches, ApplyLayeredMaterials) : relu si l'un change.
+            std::vector<std::filesystem::path> dependencies;
         };
         static constexpr std::uint64_t NoImage = UINT64_MAX;
 
@@ -44,8 +46,9 @@ namespace Flux {
         ModelLoader(const ModelLoader&) = delete;
         ModelLoader& operator=(const ModelLoader&) = delete;
 
-        // Lire `path` ; `key` revient avec le résultat.
-        void Request(std::string key, std::filesystem::path path);
+        // Lire `path` et ses matériaux multicouches (chemins relatifs à `assetsDirectory`) ; `key` revient avec le
+        // résultat.
+        void Request(std::string key, std::filesystem::path path, std::filesystem::path assetsDirectory);
         // Ajoute à `results` les fichiers lus depuis le dernier appel ; sans allocation s'il n'y en a pas.
         void TakeFinished(std::vector<Result>& results);
         // Demandés et pas encore rendus par TakeFinished.
@@ -56,6 +59,7 @@ namespace Flux {
         {
             std::string key;
             std::filesystem::path path;
+            std::filesystem::path assetsDirectory;
         };
 
         void Run(std::stop_token stop);

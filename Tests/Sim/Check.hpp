@@ -22,6 +22,7 @@ bool RunProjectTests();
 bool RunJobSystemTests();
 bool RunModelTests();
 bool RunImageTests();
+bool RunLayeredMaterialTests();
 bool RunPhysicsTests();
 bool RunAnimationTests();
 bool RunVegetationTests();
