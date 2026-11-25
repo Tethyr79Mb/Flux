@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Flux/Assets/LayeredMaterial.hpp"
 #include "Flux/Assets/Model.hpp"
 #include "Flux/Renderer/RHI/RHI.hpp"
 
@@ -33,6 +34,8 @@ namespace Flux {
             std::vector<std::uint32_t> imageLevels;
             // Fichiers lus en plus du modèle (matériaux multicouches, ApplyLayeredMaterials) : relu si l'un change.
             std::vector<std::filesystem::path> dependencies;
+            // Noms des matériaux du fichier, avant que les identiques soient réunis (inspecteur de l'éditeur).
+            std::vector<std::string> materialNames;
         };
         static constexpr std::uint64_t NoImage = UINT64_MAX;
 
@@ -48,7 +51,9 @@ namespace Flux {
 
         // Lire `path` et ses matériaux multicouches (chemins relatifs à `assetsDirectory`) ; `key` revient avec le
         // résultat.
-        void Request(std::string key, std::filesystem::path path, std::filesystem::path assetsDirectory);
+        // previews : aperçus de l'éditeur (ApplyLayeredMaterials), partagés en lecture seule avec le fil.
+        void Request(std::string key, std::filesystem::path path, std::filesystem::path assetsDirectory,
+                     std::shared_ptr<const MaterialPreviews> previews = nullptr);
         // Ajoute à `results` les fichiers lus depuis le dernier appel ; sans allocation s'il n'y en a pas.
         void TakeFinished(std::vector<Result>& results);
         // Demandés et pas encore rendus par TakeFinished.
@@ -60,6 +65,7 @@ namespace Flux {
             std::string key;
             std::filesystem::path path;
             std::filesystem::path assetsDirectory;
+            std::shared_ptr<const MaterialPreviews> previews;
         };
 
         void Run(std::stop_token stop);

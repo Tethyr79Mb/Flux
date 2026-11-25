@@ -277,6 +277,11 @@ namespace Flux {
         std::optional<Math::Box3f> LoadModel(const std::filesystem::path& path);
         // Noms des animations du modèle, dans l'ordre du fichier (chargé au besoin) ; vide s'il n'en a pas.
         std::vector<std::string> GetAnimationNames(const std::filesystem::path& path);
+        // Noms des matériaux du modèle, dans l'ordre du fichier (chargé au besoin) ; vide tant qu'il n'est pas arrivé.
+        std::vector<std::string> GetMaterialNames(const std::filesystem::path& path);
+        // Aperçu d'un matériau multicouche ou de la liste d'un modèle : `text` lu à la place du fichier par les modèles
+        // qui le lisent (relus) ; vide : le fichier de nouveau.
+        void PreviewMaterial(const std::filesystem::path& file, std::string text);
 
         const RenderTimings& GetTimings() const;
         // Temps du GPU étape par étape pour la prochaine image : à demander à chaque image où on les affiche (panneau

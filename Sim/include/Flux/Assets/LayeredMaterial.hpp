@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -42,14 +43,22 @@ namespace Flux {
     // Matériaux multicouches d'un modèle, dans un fichier voisin (Raie.glb : Raie.materiaux.json) : nom du matériau du
     // glTF, fichier .fluxmat. Le modèle reste tel qu'exporté de Blender ; un même .fluxmat sert à plusieurs modèles.
     FLUX_SIM_API std::filesystem::path GetMaterialListPath(const std::filesystem::path& model);
-    FLUX_SIM_API std::expected<std::vector<std::pair<std::string, std::string>>, std::string>
-    ParseMaterialList(std::string_view text);
+    using MaterialList = std::vector<std::pair<std::string, std::string>>;
+    FLUX_SIM_API std::expected<MaterialList, std::string> ParseMaterialList(std::string_view text);
+    FLUX_SIM_API std::string SerializeMaterialList(const MaterialList& list);
+
+    // Textes lus à la place des fichiers (aperçu de l'éditeur, pas encore enregistré), par chemin complet
+    // (MaterialPreviewKey).
+    using MaterialPreviews = std::unordered_map<std::string, std::string>;
+    FLUX_SIM_API std::string MaterialPreviewKey(const std::filesystem::path& path);
 
     // Pose sur `data` les matériaux multicouches de sa liste : images lues et assemblées (ajoutées à data.images),
     // couches et masque dans ModelMaterial. Fichier absent ou illisible : message dans la console, matériau laissé
     // tel quel. `dependencies` reçoit les fichiers lus (et la liste, même absente) : le moteur relit le modèle quand
-    // l'un d'eux change. Lent (décodage d'images) : sur le fil de lecture des modèles.
+    // l'un d'eux change. Lent (décodage d'images) : sur le fil de lecture des modèles. previews : liste ou
+    // .fluxmat montrés tels que l'éditeur les règle (nullptr : aucun).
     FLUX_SIM_API void ApplyLayeredMaterials(ModelData& data, const std::filesystem::path& modelPath,
                                             const std::filesystem::path& assetsDirectory,
-                                            std::vector<std::filesystem::path>& dependencies);
+                                            std::vector<std::filesystem::path>& dependencies,
+                                            const MaterialPreviews* previews = nullptr);
 }

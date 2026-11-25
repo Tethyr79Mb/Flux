@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Flux/Assets/LayeredMaterial.hpp>
 #include <Flux/Core/Uuid.hpp>
 #include <Flux/Math/Quaternion.hpp>
 #include <Flux/Math/Vector2.hpp>
@@ -7,6 +8,7 @@
 #include <Flux/Scene/Components.hpp>
 #include <Flux/Scene/SceneSerializer.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -28,6 +30,7 @@ namespace Flux {
 
 namespace FluxEditor {
     class ContentBrowser;
+    class MaterialPanel;
     class SceneDocument;
     class UndoHistory;
 
@@ -59,6 +62,9 @@ namespace FluxEditor {
                 m_pendingAction = Action::Delete;
             }
         }
+
+        // Panneau où « Modifier » ouvre un matériau du modèle inspecté.
+        void SetMaterialPanel(MaterialPanel* panel) { m_materials = panel; }
 
         // Le personnage sélectionné devient le seul « dirigé par le joueur » (les autres sont décochés, annulable).
         void RequestClaimPlayer() {
@@ -102,12 +108,25 @@ namespace FluxEditor {
         void DrawComponent(Flux::Engine& engine, const Flux::ComponentInfo& info, void* component, int group = -1);
         bool DrawField(Flux::Engine& engine, const Flux::ComponentInfo& info, const Flux::FieldInfo& field, void* value);
         bool DrawAnimationChoice(Flux::Engine& engine, const std::string& label, std::string& text);
+        // « Matériaux du modèle » sous le Modèle 3D : un matériau multicouche (.fluxmat) par matériau du glTF, écrit
+        // dans la liste voisine du modèle (Raie.materiaux.json).
+        void DrawModelMaterials(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected);
         void ApplyAction(Flux::Engine& engine, Flux::Scene& scene, Flux::Entity selected, UndoHistory& history);
 
         Flux::Uuid m_selection;
         bool m_modified = false;
         bool m_readOnly = false; // mode Jouer : on regarde, on ne modifie pas
         Flux::Entity m_inspected = Flux::NullEntity; // entité dont l'inspecteur dessine les champs
+        MaterialPanel* m_materials = nullptr;
+        // Liste des matériaux du modèle inspecté, relue au plus une fois par seconde (pas à chaque image).
+        struct MaterialListCache
+        {
+            std::filesystem::path path;
+            std::filesystem::file_time_type time{};
+            std::chrono::steady_clock::time_point checked{};
+            Flux::MaterialList list;
+        };
+        MaterialListCache m_materialList;
         // Actions demandées pendant le dessin, appliquées après : on ne détruit rien en parcourant l'arbre.
         Action m_pendingAction = Action::None;
         std::string m_pendingComponent; // clé du composant à ajouter, retirer ou remettre comme dans le prefab

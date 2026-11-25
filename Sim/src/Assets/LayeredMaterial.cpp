@@ -256,7 +256,20 @@ namespace Flux {
         return path;
     }
 
-    std::expected<std::vector<std::pair<std::string, std::string>>, std::string> ParseMaterialList(std::string_view text) {
+    std::string MaterialPreviewKey(const std::filesystem::path& path) {
+        return Platform::ToGenericUtf8(path.lexically_normal());
+    }
+
+    std::string SerializeMaterialList(const MaterialList& list) {
+        Json materials = Json::object();
+        for (const auto& [name, file] : list) {
+            materials[name] = file;
+        }
+        const Json document{{"format", "flux.materials"}, {"version", 1}, {"materials", std::move(materials)}};
+        return document.dump(2) + "\n";
+    }
+
+    std::expected<MaterialList, std::string> ParseMaterialList(std::string_view text) {
         const Json document = Json::parse(text.begin(), text.end(), nullptr, false);
         if (document.is_discarded() || !document.is_object()) {
             return std::unexpected("JSON illisible (attendu : un objet { ... })");
@@ -265,7 +278,7 @@ namespace Flux {
         if (materials == document.end() || !materials->is_object()) {
             return std::unexpected("« materials » doit être { \"matériau du glTF\": \"Materiaux/fichier.fluxmat\", ... }");
         }
-        std::vector<std::pair<std::string, std::string>> list;
+        MaterialList list;
         for (const auto& [name, file] : materials->items()) {
             if (!file.is_string()) {
                 return std::unexpected(std::format("matériau « {} » : le fichier doit être un texte", name));
@@ -276,17 +289,32 @@ namespace Flux {
     }
 
     void ApplyLayeredMaterials(ModelData& data, const std::filesystem::path& modelPath, const std::filesystem::path& assetsDirectory,
-                               std::vector<std::filesystem::path>& dependencies) {
+                               std::vector<std::filesystem::path>& dependencies, const MaterialPreviews* previews) {
+        // Texte de l'aperçu de l'éditeur s'il y en a un, sinon le fichier ; false : ni l'un ni l'autre.
+        std::string text;
+        const auto read = [&](const std::filesystem::path& path) {
+            if (previews) {
+                if (const auto found = previews->find(MaterialPreviewKey(path)); found != previews->end()) {
+                    text = found->second;
+                    return true;
+                }
+            }
+            std::vector<std::uint8_t> bytes;
+            std::error_code missing;
+            if (!std::filesystem::exists(path, missing) || !Platform::ReadFileBytes(path, bytes)) {
+                return false;
+            }
+            text.assign(bytes.begin(), bytes.end());
+            return true;
+        };
         const std::filesystem::path listPath = GetMaterialListPath(modelPath);
         dependencies.push_back(listPath); // suivie même absente : le moteur voit apparaître le fichier
-        std::vector<std::uint8_t> bytes;
-        std::error_code error;
         // Sans dossier des assets (pas de projet), les chemins de la liste ne mènent nulle part.
-        if (assetsDirectory.empty() || !std::filesystem::exists(listPath, error) || !Platform::ReadFileBytes(listPath, bytes)) {
+        if (assetsDirectory.empty() || !read(listPath)) {
             return;
         }
         const std::string listName = Platform::ToGenericUtf8(listPath.filename());
-        const auto list = ParseMaterialList({reinterpret_cast<const char*>(bytes.data()), bytes.size()});
+        const auto list = ParseMaterialList(text);
         if (!list) {
             Log::Warning("{} : {}", listName, list.error());
             return;
@@ -300,11 +328,11 @@ namespace Flux {
             }
             const std::filesystem::path path = assetsDirectory / Platform::PathFromUtf8(file);
             dependencies.push_back(path);
-            if (!Platform::ReadFileBytes(path, bytes)) {
+            if (!read(path)) {
                 Log::Warning("{} : matériau « {} » : fichier {} illisible", listName, name, file);
                 continue;
             }
-            auto material = ParseLayeredMaterial({reinterpret_cast<const char*>(bytes.data()), bytes.size()});
+            auto material = ParseLayeredMaterial(text);
             if (!material) {
                 Log::Warning("{} : {}", file, material.error());
                 continue;

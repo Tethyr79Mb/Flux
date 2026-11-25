@@ -126,6 +126,19 @@ bool RunLayeredMaterialTests() {
     ApplyLayeredMaterials(plain, assets / "Modeles/Test/Autre.glb", assets, dependencies);
     CHECK(plain.materials[0].layers.empty() && plain.images.empty());
     CHECK(dependencies.size() == 1);
+    // Liste écrite puis relue (inspecteur d'un modèle).
+    const auto written = ParseMaterialList(SerializeMaterialList({{"Coque", "Materiaux/Aluminium.fluxmat"}}));
+    CHECK(written.has_value() && written->size() == 1 && (*written)[0].second == "Materiaux/Aluminium.fluxmat");
+
+    // Aperçu de l'éditeur : le texte réglé remplace le fichier, sans l'écrire.
+    MaterialPreviews previews;
+    previews[MaterialPreviewKey(assets / "Materiaux/Coque.fluxmat")] = R"({"layers": [{"name": "Seule", "tiling": 3}]})";
+    ModelData previewed;
+    previewed.materials.resize(1);
+    previewed.materials[0].name = "Coque";
+    dependencies.clear();
+    ApplyLayeredMaterials(previewed, assets / "Modeles/Test/Test.glb", assets, dependencies, &previews);
+    CHECK(previewed.materials[0].layers.size() == 1 && previewed.materials[0].layers[0].tiling == 3.0f);
     std::filesystem::remove_all(assets);
     return true;
 }

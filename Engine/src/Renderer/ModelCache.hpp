@@ -102,6 +102,7 @@ namespace Flux {
         // Date la plus récente du fichier et de ceux lus avec lui (dependencies : matériaux multicouches).
         std::filesystem::file_time_type writeTime{};
         std::vector<std::filesystem::path> dependencies;
+        std::vector<std::string> materialNames; // du fichier, dans son ordre (ModelLoader::Result::materialNames)
         std::chrono::steady_clock::time_point checked{};
 
         bool IsAnimated() const { return animated; }
@@ -179,6 +180,10 @@ namespace Flux {
 
         // Dossier des assets du projet, d'où partent les chemins des matériaux multicouches (ApplyLayeredMaterials).
         void SetAssetsDirectory(const std::filesystem::path& directory);
+        // Aperçu de l'éditeur : `text` lu à la place du fichier (un .fluxmat ou la liste d'un modèle), vide : le
+        // fichier de nouveau. Les modèles qui le lisent sont relus (en entier : glTF et images, environ une seconde
+        // pour un vaisseau).
+        void PreviewMaterial(const std::filesystem::path& file, std::string text);
         // Modèle du fichier, demandé au premier appel puis relu s'il change (vérifié une fois par seconde) ; nullptr
         // tant qu'il n'est pas arrivé, ou s'il est illisible (message dans la console).
         const GpuModel* Find(const std::filesystem::path& path);
@@ -241,6 +246,9 @@ namespace Flux {
         std::filesystem::path m_knownDirectory;
         std::unordered_map<std::string, KnownPath, StringHash, std::equal_to<>> m_known;
         std::vector<ModelLoader::Result> m_ready; // lus, en attente d'envoi (Update)
+        // Aperçus de l'éditeur (PreviewMaterial) ; remplacés à chaque changement, jamais modifiés : un fil de lecture
+        // garde sans verrou la version de sa demande.
+        std::shared_ptr<const MaterialPreviews> m_previews;
         // Envoyés, visibles quand leurs copies sont finies (RHI::Device::IsUploadReady) ; l'ancienne version reste
         // dessinée jusque-là.
         struct Installing

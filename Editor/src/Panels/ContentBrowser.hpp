@@ -22,6 +22,7 @@ namespace FluxEditor {
     class InterfaceEditor;
     class SceneDocument;
     class VegetationPanel;
+    class MaterialPanel;
 
     // Panneau « Contenu » : les assets du projet (modèles, images...), comme un explorateur de fichiers : l'arbre des
     // dossiers à gauche, le contenu du dossier choisi à droite en vignettes. On y crée des dossiers et on y range
@@ -36,6 +37,8 @@ namespace FluxEditor {
         void SetInterfaceEditor(InterfaceEditor* editor) { m_interfaces = editor; }
         // Panneau où s'ouvrent les biomes et les espèces d'arbres : double-clic, « Nouveau biome », « Nouvelle espèce ».
         void SetVegetationPanel(VegetationPanel* panel) { m_vegetation = panel; }
+        // Panneau où s'ouvrent les matériaux multicouches (.fluxmat) : double-clic, « Nouveau matériau ».
+        void SetMaterialPanel(MaterialPanel* panel) { m_materials = panel; }
         // Fichiers de scène du dossier assets (sous-dossiers compris), triés par dossier puis par nom.
         const std::vector<std::filesystem::path>& GetScenes() const { return m_scenes; }
         // Prefabs (.prefab.json) du dossier assets, triés de même : le panneau « Placer » les propose.
@@ -60,7 +63,7 @@ namespace FluxEditor {
         };
 
         // Fenêtre qui demande un nom : nouveau dossier (dans path) ou nouveau nom d'un fichier ou dossier (path).
-        enum class NameRequest { None, NewFolder, NewInterface, NewBiome, NewSpecies, Rename };
+        enum class NameRequest { None, NewFolder, NewInterface, NewBiome, NewSpecies, NewMaterial, Rename };
 
         // Fichier ou dossier glissé vers un dossier.
         struct Drag
@@ -89,6 +92,8 @@ namespace FluxEditor {
         // Nouveau biome ou nouvelle espèce (fichier) dans m_requestPath, ouvert aussitôt ; false (avec un message) si
         // c'est impossible.
         bool CreateVegetationFile(Flux::Engine& engine);
+        // Nouveau matériau multicouche dans m_requestPath, ouvert aussitôt ; false (avec un message) si c'est impossible.
+        bool CreateMaterialFile(Flux::Engine& engine);
         // Déplace ou renomme un fichier ou un dossier des assets, et met à jour ce qui le désigne : champs des scènes
         // (fichiers et scène ouverte), scène de démarrage. false (avec un message) si c'est impossible.
         bool Move(Flux::Engine& engine, SceneDocument& document, const std::filesystem::path& from, const std::filesystem::path& to);
@@ -120,6 +125,7 @@ namespace FluxEditor {
         std::vector<std::filesystem::path> m_speciesFiles;   // .espece.json : la première sert de modèle à une nouvelle
         InterfaceEditor* m_interfaces = nullptr;
         VegetationPanel* m_vegetation = nullptr;
+        MaterialPanel* m_materials = nullptr;
         double m_sinceScan = 0.0;
         std::uint64_t m_scanCount = 0; // lectures du disque : les résultats de recherche d'avant sont périmés
         std::string m_search;

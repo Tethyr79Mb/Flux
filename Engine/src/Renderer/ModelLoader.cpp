@@ -22,10 +22,11 @@ namespace Flux {
         }
     }
 
-    void ModelLoader::Request(std::string key, std::filesystem::path path, std::filesystem::path assetsDirectory) {
+    void ModelLoader::Request(std::string key, std::filesystem::path path, std::filesystem::path assetsDirectory,
+                              std::shared_ptr<const MaterialPreviews> previews) {
         {
             const std::scoped_lock lock(m_mutex);
-            m_queue.push_back({std::move(key), std::move(path), std::move(assetsDirectory)});
+            m_queue.push_back({std::move(key), std::move(path), std::move(assetsDirectory), std::move(previews)});
             ++m_pending;
         }
         m_wake.notify_one();
@@ -58,9 +59,12 @@ namespace Flux {
                 m_queue.pop_front();
             }
             // Couches posées avant la préparation : elle réunit les matériaux identiques, noms perdus.
-            Result result{std::move(job.key), LoadModelFile(job.path, true, false), nullptr, {}, {}, {}};
+            Result result{std::move(job.key), LoadModelFile(job.path, true, false), nullptr, {}, {}, {}, {}};
             if (result.data) {
-                ApplyLayeredMaterials(*result.data, job.path, job.assetsDirectory, result.dependencies);
+                for (const ModelMaterial& material : result.data->materials) {
+                    result.materialNames.push_back(material.name);
+                }
+                ApplyLayeredMaterials(*result.data, job.path, job.assetsDirectory, result.dependencies, job.previews.get());
                 PrepareModel(*result.data);
             }
             Stage(result);
