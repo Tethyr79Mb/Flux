@@ -252,7 +252,7 @@ Référence : PCG d'Unreal. But : régler sans code le placement du décor des p
 
 ### Rendu
 - 🔧 HDR + bloom (lueurs, soleil, réacteurs) ; soleil dans son propre shader (disque assombri au bord, halo, rayons en étoile ou long trait horizontal façon EVE Online, au choix du composant Soleil). Force réglable dans Paramètres > Graphiques de l'éditeur ; le jeu garde la force par défaut (réglage du jeu à venir).
-- ⬜ Particules sur le GPU : armes, explosions, étincelles, fumée (et poussière sous les réacteurs au sol).
+- ⬜ Particules sur le GPU : armes, explosions, étincelles, fumée, flammes des réacteurs, brume des cascades, poussière à l'atterrissage ; effets décrits dans des fichiers édités dans l'éditeur (voir `Editor/ROADMAP.md`).
 - 🔧 Anticrénelage temporel (TAA) : sous-pixels de Halton, reprojection par la profondeur, mouvement propre des objets (vaisseau, cockpit), voisinage en YCoCg ; grain des nuages qui change à chaque image et s'efface. Limites : le mouvement des os d'un personnage animé n'est pas compté (le voisinage rattrape), les nuages ont leur propre historique (demi-résolution) avant le TAA.
 - 🔨 Mise à l'échelle FSR 3.1 d'AMD (Bruno, 2026-10-25) : réglage « Mise à l'échelle » (Natif avec notre TAA, FSR Natif AA, Qualité par défaut, Équilibré, Performance, Ultra Performance) et netteté, dans les Paramètres de l'éditeur, `Reglages.json` et les listes des interfaces. La scène est dessinée à la taille de rendu puis agrandie par la DLL signée d'AMD (téléchargée par CMake, chargée au démarrage ; absente ou refusée : Natif). Fait (étape 1) : taille de rendu séparée de la vue dans le graphe (nuages en demi-taille de rendu), mouvement complet (caméra + objets) pour FSR, sous-pixels selon le rapport. Étape 2 : masque réactif écrit par les nuages, les flammes et les traçantes (les nuages tremblaient en FSR). Reste : transparents hors du masque (vitres : traînées possibles), biais de mip des textures (un peu floues en Performance), mesures. Pas de génération d'images (écran 60 Hz).
 - ⬜ Ombres des lumières intérieures.
@@ -491,6 +491,8 @@ Référence : PCG d'Unreal. But : régler sans code le placement du décor des p
 - ⬜ Bus de mixage dans `AudioSystem` (graphe de miniaudio), base de la table de mixage de l'éditeur.
 - ⬜ Crédits et `LICENCES-TIERCES.txt` générés à côté du jeu (avant toute distribution).
 - ⬜ Backend DX12.
+- ⬜ Navmesh des PNJ à pied (Bruno, 2026-11-25) : sur les planètes (autour des lieux, refait quand le décor change) et à bord (un par vaisseau ou station, dans son repère, comme son monde physique). Référence : Recast/Detour.
+- ⬜ Cinématiques (Bruno, 2026-11-25) : lecture d'une séquence (caméras, objets, animations, sons sur une ligne de temps), en jeu et dans l'éditeur.
 
 ## Dettes et limites connues
 - Un processeur sans AVX2 s'arrête net au lancement, sans message (à ajouter avec la configuration de distribution).
