@@ -117,6 +117,7 @@ Légende : ✅ atteint · 🔧 à améliorer (fait, avec des limites connues, di
 - ⬜ Mise à l'échelle DPI (écrans 125 %, 150 %).
 - ⬜ Éditeur de matériaux (Bruno, 2026-11-18) : fichiers matériau (couleur de base, normale, rugosité, métal, émission) créés dans le Contenu et édités dans l'inspecteur, glissés sur un objet ou sur une partie précise d'un modèle (sous-mesh) pour remplacer le matériau du glTF.
 - ⬜ Éditeur de terrain des planètes (réglages en direct avec aperçu).
+- ⬜ Panneau du graphe de génération procédurale (Bruno, 2026-11-25, après celui des missions ; voir `Engine/ROADMAP.md`) : même widget de nœuds, aperçu en direct sur la planète.
 - ⬜ Profileur dans l'éditeur (historique des temps CPU / GPU).
 
 ## Dettes et limites connues

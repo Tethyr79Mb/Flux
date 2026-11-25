@@ -225,6 +225,12 @@ Référence : Subsumption de Star Citizen (éditeur visuel, logique en C++).
 - ⬜ Éditeur visuel du graphe dans FluxEditor (voir `Editor/ROADMAP.md`).
 - ⬜ Plus tard : scripts Luau en complément, pour les cas spéciaux.
 
+### Graphe de génération procédurale (Bruno, 2026-11-25 ; plus tard, après le graphe de missions)
+Référence : PCG d'Unreal. But : régler sans code le placement du décor des planètes, aujourd'hui écrit dans `SowPlace` et `SowPlain`.
+- ⬜ Nœuds : points échantillonnés sur le terrain, filtres (pente, altitude, biome, distance à une rivière ou une route), placement (arbres, rochers, herbe, bâtiments).
+- ⬜ Graphe traduit en réglages lus par le compute shader des tuiles et par la collision CPU, pour garder un seul résultat (`VegetationGpuTests`).
+- ⬜ Régénération de la zone touchée quand le terrain change.
+
 ### Performances au sol (constaté : 150 images/s en Release face à l'océan)
 - ✅ Démarrage : textures du sol décodées en parallèle sans bloquer le jeu, police et images optimisées en Debug.
 - ✅ Air, climat et reflet du ciel sur l'océan calculés par sommet pour l'eau ; pour le sol, les arbres et l'herbe, une fois par pixel visible dans la passe d'éclairage (A3).
