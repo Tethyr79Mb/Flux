@@ -62,6 +62,8 @@ namespace Flux {
         std::uint32_t imageCount = 0;
         std::uint32_t firstMaterial = 0; // cases de la table des matériaux
         std::uint32_t materialCount = 0;
+        std::uint32_t firstLayer = 0; // cases de la table des couches (matériaux multicouches)
+        std::uint32_t layerCount = 0;
         std::uint32_t firstMeshlet = 0;  // paquets dans la page (GeometryPage::meshlets), mesh shaders seulement
         std::uint32_t meshletCount = 0;
         std::uint32_t firstMeshletWord = 0; // leurs sommets et triangles (GeometryPage::meshletData)
@@ -97,7 +99,9 @@ namespace Flux {
         mutable bool bottomLevelBuilt = false; // construction enregistrée : la structure peut entrer dans la scène
         bool loaded = false;
         bool loading = false; // fichier en lecture (ModelLoader) ; l'ancienne version, s'il y en a une, reste dessinée
+        // Date la plus récente du fichier et de ceux lus avec lui (dependencies : matériaux multicouches).
         std::filesystem::file_time_type writeTime{};
+        std::vector<std::filesystem::path> dependencies;
         std::chrono::steady_clock::time_point checked{};
 
         bool IsAnimated() const { return animated; }
@@ -143,6 +147,7 @@ namespace Flux {
         // Emplacements du groupe 2 (voir shaders/Mesh.slang).
         static constexpr std::uint32_t ImageTableSlot = 0;
         static constexpr std::uint32_t MaterialTableSlot = 1;
+        static constexpr std::uint32_t LayerTableSlot = 2;
 
         // Groupe 0 : textures du sol des planètes (GroundTextures) ; les modèles n'en lisent rien.
         const RHI::BindGroupLayout& GetGroundLayout() const { return *m_groundLayout; }
@@ -172,6 +177,8 @@ namespace Flux {
         void SetImage(std::uint32_t slot, const RHI::Texture& texture);
         void FreeImages(std::uint32_t first, std::uint32_t count) { m_imageSlots.Free(first, count); }
 
+        // Dossier des assets du projet, d'où partent les chemins des matériaux multicouches (ApplyLayeredMaterials).
+        void SetAssetsDirectory(const std::filesystem::path& directory);
         // Modèle du fichier, demandé au premier appel puis relu s'il change (vérifié une fois par seconde) ; nullptr
         // tant qu'il n'est pas arrivé, ou s'il est illisible (message dans la console).
         const GpuModel* Find(const std::filesystem::path& path);
@@ -220,9 +227,11 @@ namespace Flux {
         std::unique_ptr<RHI::Texture> m_whiteArray; // la même en tableau d'une couche : groupe blanc du sol
         std::unique_ptr<RHI::BindGroup> m_whiteGroup;
         std::unique_ptr<RHI::Buffer> m_materialTable; // MaterialData, une case par matériau
+        std::unique_ptr<RHI::Buffer> m_layerTable;    // MaterialLayerData, une case par couche
         std::unique_ptr<RHI::BindGroup> m_sceneGroup;
         RangeAllocator m_imageSlots;
         RangeAllocator m_materialSlots;
+        RangeAllocator m_layerSlots;
         std::vector<GeometryPage> m_pages;
         GpuModel m_cube;
         GpuModel m_sphere;

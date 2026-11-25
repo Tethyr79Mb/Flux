@@ -1,0 +1,23 @@
+{
+  "format": "flux.material",
+  "version": 1,
+  "layers": [
+    {
+      "name": "Aluminium brossé",
+      "colorImage": "Materiaux/Couches/Aluminium-brosse/couleur.jpg",
+      "normalImage": "Materiaux/Couches/Aluminium-brosse/normales.jpg",
+      "roughnessImage": "Materiaux/Couches/Aluminium-brosse/rugosite.jpg",
+      "metallicImage": "Materiaux/Couches/Aluminium-brosse/metal.jpg",
+      "heightImage": "Materiaux/Couches/Aluminium-brosse/hauteur.jpg",
+      "mask": "none",
+      "tint": [2.4, 2.4, 2.45],
+      "metallic": 1,
+      "roughness": 1,
+      "tiling": 30,
+      "normalScale": 1,
+      "opacity": 1,
+      "sharpness": 4,
+      "heightInfluence": 0.5
+    }
+  ]
+}

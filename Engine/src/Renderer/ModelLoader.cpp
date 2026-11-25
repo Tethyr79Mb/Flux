@@ -1,5 +1,6 @@
 #include "Renderer/ModelLoader.hpp"
 
+#include "Flux/Assets/LayeredMaterial.hpp"
 #include "Flux/Core/Log.hpp"
 
 #include <algorithm>
@@ -21,10 +22,10 @@ namespace Flux {
         }
     }
 
-    void ModelLoader::Request(std::string key, std::filesystem::path path) {
+    void ModelLoader::Request(std::string key, std::filesystem::path path, std::filesystem::path assetsDirectory) {
         {
             const std::scoped_lock lock(m_mutex);
-            m_queue.push_back({std::move(key), std::move(path)});
+            m_queue.push_back({std::move(key), std::move(path), std::move(assetsDirectory)});
             ++m_pending;
         }
         m_wake.notify_one();
@@ -56,7 +57,12 @@ namespace Flux {
                 job = std::move(m_queue.front());
                 m_queue.pop_front();
             }
-            Result result{std::move(job.key), LoadModelFile(job.path), nullptr, {}};
+            // Couches posées avant la préparation : elle réunit les matériaux identiques, noms perdus.
+            Result result{std::move(job.key), LoadModelFile(job.path, true, false), nullptr, {}, {}, {}};
+            if (result.data) {
+                ApplyLayeredMaterials(*result.data, job.path, job.assetsDirectory, result.dependencies);
+                PrepareModel(*result.data);
+            }
             Stage(result);
             const std::scoped_lock lock(m_mutex);
             m_finished.push_back(std::move(result));

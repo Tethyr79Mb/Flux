@@ -1,0 +1,7 @@
+{
+  "format": "flux.materials",
+  "version": 1,
+  "materials": {
+    "Coque": "Materiaux/Aluminium.fluxmat"
+  }
+}

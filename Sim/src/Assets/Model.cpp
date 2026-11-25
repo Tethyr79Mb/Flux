@@ -813,7 +813,7 @@ namespace Flux {
         }
     }
 
-    std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images) {
+    std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images, bool prepare) {
         const std::string fileName = Platform::ToUtf8(path.filename());
         const cgltf_options options = FileOptions();
         auto parsed = Parse(path, options);
@@ -855,7 +855,9 @@ namespace Flux {
             }
             return std::unexpected("« " + fileName + " » : aucun triangle");
         }
-        PrepareModel(loader.model, images);
+        if (prepare) {
+            PrepareModel(loader.model, images);
+        }
         return std::move(loader.model);
     }
 
@@ -864,7 +866,7 @@ namespace Flux {
         auto MaterialKey(const ModelMaterial& m) {
             return std::tie(m.baseColor, m.baseColorImage, m.emissive, m.emissiveImage, m.metallic, m.roughness,
                             m.metallicRoughnessImage, m.normalImage, m.normalScale, m.occlusionImage, m.occlusionStrength,
-                            m.alphaCutoff, m.doubleSided, m.blend);
+                            m.alphaCutoff, m.doubleSided, m.blend, m.layers, m.layerMaskImage);
         }
 
         // Ordre des triangles dans un bloc : opaques à une face, opaques à deux faces (ces deux sortes font chacune une

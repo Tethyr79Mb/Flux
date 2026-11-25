@@ -25,6 +25,30 @@ namespace Flux {
         Math::Vector2f uv;     // (0, 0) en haut à gauche de l'image, comme en glTF
     };
 
+    // Couche d'un matériau multicouche (LayeredMaterial.hpp) : matière répétée (peinture, métal nu, saleté), posée sur
+    // le matériau du glTF là où le dit son masque.
+    struct ModelMaterialLayer
+    {
+        // Indices dans ModelData::images, images assemblées au chargement : couleur (rgb, sRGB) et hauteur (alpha) ;
+        // données : normale (rouge-vert, repère tangent), rugosité (bleu), métal (alpha). -1 : aucune.
+        int colorImage = -1;
+        int dataImage = -1;
+        Math::LinearColor tint{1.0f, 1.0f, 1.0f, 1.0f}; // multiplie la couleur
+        float metallic = 1.0f;  // x alpha de l'image de données
+        float roughness = 1.0f; // x bleu
+        float tiling = 1.0f;    // répétitions par unité d'UV du modèle
+        float normalScale = 1.0f;
+        float opacity = 1.0f;
+        // Bord de la couche (masquée) : plus net avec sharpness, et déplacé par son relief avec heightInfluence (la
+        // saleté s'accroche d'abord à ses grains, l'écaille de peinture suit ses bosses).
+        float sharpness = 4.0f;
+        float heightInfluence = 0.5f;
+        int maskChannel = -1; // canal du masque (0 rouge à 3 alpha) ; -1 : partout
+
+        bool operator==(const ModelMaterialLayer&) const = default;
+    };
+    inline constexpr std::size_t MaxMaterialLayers = 4;
+
     struct ModelMaterial
     {
         std::string name;
@@ -50,6 +74,10 @@ namespace Flux {
         bool doubleSided = false; // faces arrière dessinées aussi
         // Transparent (alphaMode BLEND) : mélangé à ce qui est derrière selon l'alpha, dessiné après les opaques.
         bool blend = false;
+        // Couches posées dans l'ordre par un fichier de matériau (.fluxmat), au plus MaxMaterialLayers ; leur masque
+        // (une couche par canal) suit les UV du modèle.
+        std::vector<ModelMaterialLayer> layers;
+        int layerMaskImage = -1;
     };
 
     // Suite de triangles d'un même matériau : indices [firstIndex, firstIndex + indexCount) de ModelData::indices.
@@ -200,8 +228,10 @@ namespace Flux {
     // morph targets). Les extensions de compression (Draco,
     // meshopt, KTX2) ne sont pas gérées : le fichier est refusé. images = false : les images ne sont pas décodées
     // (ModelData::images vide, indices d'image à -1) ni les paquets construits, pour qui n'a besoin que des triangles
-    // (collisions).
-    FLUX_SIM_API std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images = true);
+    // (collisions). prepare = false : PrepareModel laissé à l'appelant, qui change d'abord les matériaux (matériaux
+    // multicouches, ApplyLayeredMaterials : leurs noms servent avant que les matériaux identiques soient réunis).
+    FLUX_SIM_API std::expected<ModelData, std::string> LoadModelFile(const std::filesystem::path& path, bool images = true,
+                                                                     bool prepare = true);
 
     // Rangement pour le rendu, appelé par LoadModelFile : le modèle se dessine en peu d'appels quelle que soit la façon
     // dont il a été modélisé. Les matériaux identiques (tout sauf le nom) n'en font plus qu'un, les triangles d'un même

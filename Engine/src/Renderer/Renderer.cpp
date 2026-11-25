@@ -1525,6 +1525,9 @@ namespace Flux {
     void Renderer::SetAssetsDirectory(const std::filesystem::path& directory) {
         if (directory != m_impl->assetsDirectory) {
             m_impl->assetsDirectory = directory;
+            if (m_impl->meshes) {
+                m_impl->meshes->GetModels().SetAssetsDirectory(directory);
+            }
         }
     }
 

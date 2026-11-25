@@ -198,7 +198,33 @@ struct MaterialData
     uint metallicRoughnessImage;
     uint normalImage;
     uint occlusionImage;
-    uint2 padding;
+    // Couches (matériau multicouche, MaterialLayerData) : cases [firstLayer, firstLayer + layerCount) ; leur masque
+    // dans materialImages (0 : blanc, couches partout). Champs séparés : un uint3 serait aligné sur 16 octets.
+    uint firstLayer;
+    uint layerCount;
+    uint maskImage;
+    uint padding0;
+    uint padding1;
+    uint padding2;
+};
+
+// Doit correspondre à MaterialLayerData dans ModelCache.cpp : une couche d'un matériau multicouche, matière répétée
+// (peinture, métal nu, saleté) posée sur le matériau du modèle là où le dit son canal du masque.
+struct MaterialLayerData
+{
+    float4 tint;          // rgb : multiplie la couleur ; a : opacité de la couche
+    float metallic;       // x alpha de l'image de données
+    float roughness;      // x son bleu
+    float tiling;         // répétitions par unité d'UV du modèle
+    float normalScale;    // 0 : pas de relief
+    float sharpness;      // netteté du bord (1 : fondu sur tout le masque)
+    float heightInfluence; // part du relief de la couche (alpha de sa couleur) dans son bord
+    uint colorImage;      // rgb : couleur (sRGB) ; a : hauteur
+    uint dataImage;       // rouge-vert : normale (repère tangent) ; bleu : rugosité ; alpha : métal
+    uint maskChannel;     // 0 à 3 ; 4 : partout
+    uint padding0;
+    uint padding1;
+    uint padding2;
 };
 
 // Groupe 0 : tuiles de planète avec textures du sol (GroundTextures.hpp), une couche par matière (GroundLayer). Images
@@ -264,6 +290,7 @@ struct MaterialData
 // sRGB (le GPU les ramène en linéaire à la lecture), données (métal-rugosité, normales, occlusion) telles quelles.
 [[vk::binding(0, 2)]] Sampler2D materialImages[];
 [[vk::binding(1, 2)]] StructuredBuffer<MaterialData> materials;
+[[vk::binding(2, 2)]] StructuredBuffer<MaterialLayerData> materialLayers;
 
 // Un même appel dessine des matériaux différents : l'indice peut changer d'un pixel voisin à l'autre.
 float4 SampleMaterial(uint image, float2 uv)
@@ -1414,10 +1441,9 @@ float3 SceneLights(float3 worldPosition, Surface s)
 
 // Normale de la carte de normales, sans tangentes dans les sommets : le repère tangent est retrouvé au pixel par
 // les dérivées de la position et des UV (« cotangent frame » de Schüler). Marche aussi avec des UV en miroir.
-float3 PerturbNormal(MaterialData material, float3 normal, float3 worldPosition, float2 uv)
+// tangent et bitangent reçoivent ce repère, mis à l'échelle de la plus longue ; false si les UV sont dégénérées.
+bool CotangentFrame(float3 normal, float3 worldPosition, float2 uv, out float3 tangent, out float3 bitangent)
 {
-    float3 mapped = SampleMaterial(material.normalImage, uv).xyz * 2.0 - 1.0;
-    mapped.xy *= material.normalScale;
     const float3 dp1 = ddx(worldPosition);
     const float3 dp2 = ddy(worldPosition);
     const float2 duv1 = ddx(uv);
@@ -1425,14 +1451,80 @@ float3 PerturbNormal(MaterialData material, float3 normal, float3 worldPosition,
     const float3 dp2perp = cross(dp2, normal);
     const float3 dp1perp = cross(normal, dp1);
     // glTF : v des UV vers le bas de l'image, la bitangente de la carte vers son haut.
-    const float3 tangent = dp2perp * duv1.x + dp1perp * duv2.x;
-    const float3 bitangent = -(dp2perp * duv1.y + dp1perp * duv2.y);
+    tangent = dp2perp * duv1.x + dp1perp * duv2.x;
+    bitangent = -(dp2perp * duv1.y + dp1perp * duv2.y);
     const float lengthSquared = max(dot(tangent, tangent), dot(bitangent, bitangent));
     if (lengthSquared <= 1.0e-20) {
-        return normal; // UV dégénérées (toutes égales) : pas de relief
+        return false; // UV dégénérées (toutes égales) : pas de relief
     }
     const float scale = rsqrt(lengthSquared);
-    return normalize(tangent * (mapped.x * scale) + bitangent * (mapped.y * scale) + normal * mapped.z);
+    tangent *= scale;
+    bitangent *= scale;
+    return true;
+}
+
+float3 PerturbNormal(MaterialData material, float3 normal, float3 worldPosition, float2 uv)
+{
+    float3 mapped = SampleMaterial(material.normalImage, uv).xyz * 2.0 - 1.0;
+    mapped.xy *= material.normalScale;
+    float3 tangent;
+    float3 bitangent;
+    if (!CotangentFrame(normal, worldPosition, uv, tangent, bitangent)) {
+        return normal;
+    }
+    return normalize(tangent * mapped.x + bitangent * mapped.y + normal * mapped.z);
+}
+
+// Matière d'une surface pendant le mélange des couches.
+struct LayeredSurface
+{
+    float3 color;
+    float metallic;
+    float roughness;
+    float3 detail; // relief des couches (repère tangent), ajouté à celui du modèle
+};
+
+// Pose les couches d'un matériau multicouche dans l'ordre, chacune par-dessus les précédentes : couleur, métal et
+// rugosité remplacés là où elle est posée, son relief à la place de celui des couches dessous, ajouté au relief du
+// modèle (les panneaux de la coque restent sous la peinture). Lectures par SampleGrad, dérivées prises une fois avant
+// la boucle : une couche absente du pixel (masque à 0, le cas de la plupart des pixels pour l'usure) est sautée sans
+// rien lire, ce qu'un Sample ordinaire interdit (dérivées indéfinies dans une branche qui diverge).
+LayeredSurface ApplyMaterialLayers(MaterialData material, float2 uv, LayeredSurface s)
+{
+    const float4 mask = SampleMaterial(material.maskImage, uv);
+    const float2 dx = ddx(uv);
+    const float2 dy = ddy(uv);
+    for (uint i = 0; i < material.layerCount; ++i) {
+        const MaterialLayerData layer = materialLayers[material.firstLayer + i];
+        const bool masked = layer.maskChannel < 4u;
+        const float coverage = masked ? mask[layer.maskChannel] : 1.0;
+        // Bord : le masque, déplacé par le relief de la couche (la saleté s'accroche d'abord à ses grains), puis
+        // resserré. Le relief déplace le masque d'au plus heightInfluence / 2 : sous ce seuil, rien à lire.
+        const float threshold = 0.5 - 0.5 / layer.sharpness;
+        if (layer.tint.a <= 0.0 || (masked && coverage + 0.5 * layer.heightInfluence <= threshold)) {
+            continue;
+        }
+        const float2 layerUv = uv * layer.tiling;
+        const float4 color = materialImages[NonUniformResourceIndex(layer.colorImage)].SampleGrad(layerUv, dx * layer.tiling,
+                                                                                                  dy * layer.tiling);
+        float weight = layer.tint.a;
+        if (masked) {
+            weight *= saturate((coverage + (color.a - 0.5) * layer.heightInfluence - 0.5) * layer.sharpness + 0.5);
+        }
+        if (weight <= 0.0) {
+            continue;
+        }
+        // Sans image de données : la blanche, lue comme rugosité et métal pleins ; normalScale vaut alors 0.
+        const float4 data = materialImages[NonUniformResourceIndex(layer.dataImage)].SampleGrad(layerUv, dx * layer.tiling,
+                                                                                                dy * layer.tiling);
+        const float2 slope = (data.rg * 2.0 - 1.0) * layer.normalScale;
+        const float3 detail = float3(slope, sqrt(saturate(1.0 - dot(slope, slope))));
+        s.color = lerp(s.color, color.rgb * layer.tint.rgb, weight);
+        s.metallic = lerp(s.metallic, layer.metallic * data.a, weight);
+        s.roughness = lerp(s.roughness, layer.roughness * data.b, weight);
+        s.detail = lerp(s.detail, detail, weight);
+    }
+    return s;
 }
 
 // Couleur écrite dans l'image HDR de la scène : la lumière linéaire, sans exposition ni courbe de tons (appliquées
@@ -2641,21 +2733,49 @@ MeshMaterial ReadMeshMaterial(VertexOutput input, bool frontFacing, bool alphaTe
     const DrawData draw = draws[input.draw];
     const MaterialData material = materials[input.material];
     MeshMaterial m;
-    m.base = SampleMaterial(material.baseColorImage, input.uv) * material.color * draw.tint * float4(tint, 1.0);
+    const float4 materialColor = SampleMaterial(material.baseColorImage, input.uv) * material.color;
+    const float4 entityTint = draw.tint * float4(tint, 1.0);
+    m.base = materialColor * entityTint;
     if (alphaTest && (m.base.a < material.alphaCutoff || (lodFade && LodFadeHidden(draw.surface.z, input.position.xy)))) {
         discard;
     }
     // Face arrière d'un matériau double face : éclairée comme vue de son côté.
     m.geometryNormal = normalize(input.normal) * (frontFacing ? 1.0 : -1.0);
     m.normal = m.geometryNormal;
-    if (material.normalScale != 0.0) { // le même pour toute la primitive
-        m.normal = PerturbNormal(material, m.geometryNormal, input.worldPosition, input.uv);
-    }
     const float4 metallicRoughness = SampleMaterial(material.metallicRoughnessImage, input.uv);
+    float metallic = material.metallic * metallicRoughness.b;
+    float roughness = material.roughness * metallicRoughness.g;
+    if (material.layerCount == 0u) { // le même pour toute la primitive
+        if (material.normalScale != 0.0) {
+            m.normal = PerturbNormal(material, m.geometryNormal, input.worldPosition, input.uv);
+        }
+    } else {
+        LayeredSurface s;
+        s.color = materialColor.rgb;
+        s.metallic = metallic;
+        s.roughness = roughness;
+        s.detail = float3(0.0, 0.0, 1.0);
+        s = ApplyMaterialLayers(material, input.uv, s);
+        m.base.rgb = s.color * entityTint.rgb;
+        metallic = s.metallic;
+        roughness = s.roughness;
+        float3 mapped = float3(0.0, 0.0, 1.0);
+        if (material.normalScale != 0.0) {
+            mapped = SampleMaterial(material.normalImage, input.uv).xyz * 2.0 - 1.0;
+            mapped.xy *= material.normalScale;
+        }
+        // Relief des couches sur celui du modèle (mélange « whiteout » : pentes ajoutées).
+        mapped = float3(mapped.xy + s.detail.xy, mapped.z * s.detail.z);
+        float3 tangent;
+        float3 bitangent;
+        if (CotangentFrame(m.geometryNormal, input.worldPosition, input.uv, tangent, bitangent)) {
+            m.normal = normalize(tangent * mapped.x + bitangent * mapped.y + m.geometryNormal * mapped.z);
+        }
+    }
     // Métal et rugosité de l'entité : à la place de ceux du matériau et de son image (ModelComponent), ou en facteur.
     const bool fixed = draw.emissive.w != 0.0;
-    m.metallic = saturate(fixed ? draw.surface.x : material.metallic * draw.surface.x * metallicRoughness.b);
-    m.roughness = saturate(fixed ? draw.surface.y : material.roughness * draw.surface.y * metallicRoughness.g);
+    m.metallic = saturate(fixed ? draw.surface.x : metallic * draw.surface.x);
+    m.roughness = saturate(fixed ? draw.surface.y : roughness * draw.surface.y);
     m.occlusion = 1.0 + material.occlusionStrength * (SampleMaterial(material.occlusionImage, input.uv).r - 1.0);
     return m;
 }
