@@ -760,6 +760,7 @@ namespace Flux {
             Log::Error("modèle {} : {}", name, uploaded.error());
             return;
         }
+        uploaded->materialNames = std::move(result.materialNames);
         m_installing.push_back({&model, std::move(*uploaded), ticket});
     }
 
@@ -772,6 +773,24 @@ namespace Flux {
         if (directory != m_knownDirectory) {
             m_knownDirectory = directory;
             m_known.clear();
+        }
+    }
+
+    void ModelCache::PreviewMaterial(const std::filesystem::path& file, std::string text) {
+        const std::string key = MaterialPreviewKey(file);
+        auto previews = m_previews ? std::make_shared<MaterialPreviews>(*m_previews) : std::make_shared<MaterialPreviews>();
+        if (text.empty()) {
+            previews->erase(key);
+        } else {
+            (*previews)[key] = std::move(text);
+        }
+        m_previews = previews->empty() ? nullptr : std::move(previews);
+        // Relus à leur prochaine vérification (Refresh), tout de suite s'ils ne sont pas en lecture.
+        for (auto& [name, model] : m_models) {
+            if (std::ranges::any_of(model.dependencies, [&](const std::filesystem::path& p) { return MaterialPreviewKey(p) == key; })) {
+                model.writeTime = {};
+                model.checked = {};
+            }
         }
     }
 
@@ -799,7 +818,7 @@ namespace Flux {
             if (created || (!error && writeTime != model.writeTime)) {
                 model.writeTime = error ? std::filesystem::file_time_type{} : writeTime;
                 model.loading = true;
-                m_loader.Request(key, path, m_knownDirectory);
+                m_loader.Request(key, path, m_knownDirectory, m_previews);
             }
         }
         return model.loaded ? &model : nullptr;

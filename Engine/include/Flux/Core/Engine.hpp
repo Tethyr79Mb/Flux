@@ -232,6 +232,12 @@ namespace Flux {
         std::optional<Math::Box3f> GetMeshBounds(Entity entity);
         // Noms des animations du modèle 3D de l'entité (ModelComponent) ; vide sans modèle ou sans animation.
         std::vector<std::string> GetAnimationNames(Entity entity);
+        // Noms des matériaux du modèle 3D de l'entité (ModelComponent), dans l'ordre du fichier ; vide sans modèle ou
+        // tant qu'il n'est pas chargé.
+        std::vector<std::string> GetMaterialNames(Entity entity);
+        // Aperçu d'un matériau multicouche (.fluxmat) ou de la liste des matériaux d'un modèle, réglés dans l'éditeur
+        // sans être enregistrés : `text` remplace le fichier pour le rendu ; vide : le fichier de nouveau.
+        void PreviewMaterial(const std::filesystem::path& file, std::string text);
 
         // Remplace la scène par celle du fichier (chemin relatif au dossier des assets, « scenes/Demo.scene.json »)
         // à la fin de la frame en cours : ce qui se passe pendant la frame voit encore l'ancienne scène.

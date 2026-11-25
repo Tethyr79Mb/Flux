@@ -4,6 +4,7 @@
 #include "Document/UndoHistory.hpp"
 #include "Panels/AssetPicker.hpp"
 #include "Panels/FontList.hpp"
+#include "Panels/MaterialPanel.hpp"
 #include "Panels/ContentBrowser.hpp"
 #include "Panels/Mounts.hpp"
 #include "Search.hpp"
@@ -516,6 +517,9 @@ namespace FluxEditor {
                 const bool wasPlayer = IsPlayer(scene, selected);
                 if (tab.info) {
                     DrawComponent(engine, *tab.info, tab.component, tab.group);
+                    if (tab.info->key == "model" && tab.group <= 0) {
+                        DrawModelMaterials(engine, scene, selected);
+                    }
                 } else {
                     DrawObjectTab(engine, scene, selected);
                 }
@@ -799,6 +803,91 @@ namespace FluxEditor {
         }
         text = index == 0 ? std::string{} : animations[static_cast<std::size_t>(index - 1)];
         return true;
+    }
+
+    void SceneEditor::DrawModelMaterials(Engine& engine, Scene& scene, Entity selected) {
+        UI::Context& ui = engine.GetUi();
+        const auto* model = scene.TryGet<ModelComponent>(selected);
+        const Project* project = engine.GetProject();
+        if (!model || model->model.empty() || !project) {
+            return;
+        }
+        if (!ui.CollapsingHeader("Matériaux du modèle###matériaux", false, UI::Icon::Image)) {
+            return;
+        }
+        const std::vector<std::string> names = engine.GetMaterialNames(selected);
+        if (names.empty()) {
+            ui.TextDisabled("Modèle pas encore chargé.");
+            return;
+        }
+        // Relue si elle a changé (Contenu, éditeur de texte), au plus une fois par seconde.
+        const std::filesystem::path listPath = GetMaterialListPath(project->assetsDirectory / Platform::PathFromUtf8(model->model));
+        MaterialListCache& cache = m_materialList;
+        const auto now = std::chrono::steady_clock::now();
+        if (cache.path != listPath || now - cache.checked >= std::chrono::seconds(1)) {
+            cache.checked = now;
+            std::error_code error;
+            const std::filesystem::file_time_type time = std::filesystem::last_write_time(listPath, error);
+            if (cache.path != listPath || time != cache.time) {
+                cache.path = listPath;
+                cache.time = time;
+                cache.list.clear();
+                std::vector<std::uint8_t> bytes;
+                if (!error && Platform::ReadFileBytes(listPath, bytes)) {
+                    if (auto list = ParseMaterialList(std::string(bytes.begin(), bytes.end()))) {
+                        cache.list = std::move(*list);
+                    } else {
+                        Log::Warning("{} : {}", Platform::ToUtf8(listPath.filename()), list.error());
+                    }
+                }
+            }
+        }
+        ui.TextDisabled("Un matériau multicouche (.fluxmat) par matériau du modèle. Réglage du fichier du modèle : "
+                        "tous les objets qui le montrent suivent, dans toutes les scènes (pas d'annulation par Ctrl+Z).");
+        bool changed = false;
+        std::optional<std::string> opened;
+        ui.BeginDisabled(m_readOnly);
+        for (const std::string& name : names) {
+            ui.PushId(name);
+            const auto entry = std::ranges::find(cache.list, name, &std::pair<std::string, std::string>::first);
+            std::string text = entry != cache.list.end() ? entry->second : std::string();
+            bool browse = false;
+            bool edited = ui.InputTextBrowse(name, text, browse);
+            if (browse) {
+                if (std::optional<std::string> chosen = ChooseAsset(engine, AssetType::Material, text)) {
+                    text = std::move(*chosen);
+                    edited = true;
+                }
+            }
+            ui.SetItemTooltip("Vide : le matériau du modèle tel qu'exporté de Blender");
+            if (edited && text != (entry != cache.list.end() ? entry->second : std::string())) {
+                if (text.empty()) {
+                    cache.list.erase(entry);
+                } else if (entry != cache.list.end()) {
+                    entry->second = text;
+                } else {
+                    cache.list.emplace_back(name, text);
+                }
+                changed = true;
+            } else if (!text.empty() && m_materials && ui.Button("Modifier")) {
+                opened = text;
+            }
+            ui.PopId();
+        }
+        ui.EndDisabled();
+        if (changed) {
+            // Liste vide : le fichier disparaît, le modèle redevient celui de Blender.
+            std::error_code error;
+            if (cache.list.empty()) {
+                std::filesystem::remove(listPath, error);
+            } else if (auto written = SceneSerializer::WriteFile(listPath, SerializeMaterialList(cache.list)); !written) {
+                Platform::ShowError(engine.GetWindow(), "Matériaux du modèle", written.error());
+            }
+            cache.time = std::filesystem::last_write_time(listPath, error);
+        }
+        if (opened && m_materials) {
+            m_materials->Open(engine, project->assetsDirectory / Platform::PathFromUtf8(*opened));
+        }
     }
 
     void SceneEditor::ApplyAction(Engine& engine, Scene& scene, Entity selected, UndoHistory& history) {

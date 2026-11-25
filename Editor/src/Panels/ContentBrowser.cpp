@@ -2,6 +2,7 @@
 
 #include "Document/SceneDocument.hpp"
 #include "Interface/InterfaceEditor.hpp"
+#include "Panels/MaterialPanel.hpp"
 #include "Panels/VegetationPanel.hpp"
 #include "Search.hpp"
 
@@ -275,6 +276,11 @@ namespace FluxEditor {
                         m_requestPath = m_folder;
                         m_requestName = "Nouvelle espèce";
                     }
+                    if (m_materials && ui.MenuItem("Nouveau matériau...", {}, !document.IsLocked())) {
+                        m_request = NameRequest::NewMaterial;
+                        m_requestPath = m_folder;
+                        m_requestName = "Nouveau matériau";
+                    }
                     if (ui.MenuItem("Afficher dans l'explorateur")) {
                         Platform::ShowInExplorer(m_folder);
                     }
@@ -481,14 +487,16 @@ namespace FluxEditor {
             const bool prefab = !entry.directory && IsPrefab(entry.path);
             const bool biome = !entry.directory && VegetationPanel::IsBiome(entry.path);
             const bool species = !entry.directory && VegetationPanel::IsSpecies(entry.path);
+            const bool material = !entry.directory && MaterialPanel::IsMaterial(entry.path);
             const UI::Icon icon = entry.directory ? UI::Icon::Folder
                                 : scene           ? UI::Icon::Scene
                                 : interfaceFile   ? UI::Icon::Window
                                 : prefab          ? UI::Icon::Prefab
                                 : biome           ? UI::Icon::Biome
                                 : species         ? UI::Icon::Tree
+                                : material        ? UI::Icon::Image
                                                   : UI::Icon::File;
-            const bool ownIcon = scene || interfaceFile || prefab || biome || species;
+            const bool ownIcon = scene || interfaceFile || prefab || biome || species || material;
             const bool selected = scene ? entry.path.lexically_normal() == openScene : entry.path == m_selected;
             ui.PushId(entry.name);
             const UI::Context::TileResult tile = ui.Tile(scene ? SceneName(entry.path) : entry.name, icon, badge, color, selected,
@@ -513,6 +521,9 @@ namespace FluxEditor {
             }
             if (tile.doubleClicked && (biome || species) && m_vegetation) {
                 m_vegetation->Open(engine, entry.path);
+            }
+            if (tile.doubleClicked && material && m_materials) {
+                m_materials->Open(engine, entry.path);
             }
             if (tile.doubleClicked && !entry.directory && IsSound(entry.path) && engine.GetProject()) {
                 // Écouter le son, une fois.
@@ -605,6 +616,9 @@ namespace FluxEditor {
             && ui.MenuItem("Régler dans le panneau Végétation")) {
             m_vegetation->Open(engine, entry.path);
         }
+        if (!entry.directory && MaterialPanel::IsMaterial(entry.path) && m_materials && ui.MenuItem("Régler dans le panneau Matériau")) {
+            m_materials->Open(engine, entry.path);
+        }
         if (!entry.directory && IsPrefab(entry.path)
             && ui.MenuItem("Ouvrir le prefab", {},
                            !document.IsLocked() && entry.path.lexically_normal() != document.GetPath().lexically_normal())) {
@@ -637,6 +651,7 @@ namespace FluxEditor {
                                        : m_request == NameRequest::NewInterface ? "Nouvelle interface"
                                        : m_request == NameRequest::NewBiome     ? "Nouveau biome"
                                        : m_request == NameRequest::NewSpecies   ? "Nouvelle espèce"
+                                       : m_request == NameRequest::NewMaterial  ? "Nouveau matériau"
                                                                                 : "Renommer";
         if (ui.BeginPanel(title, {(static_cast<float>(screen.x) - width) * 0.5f,
                                                                     static_cast<float>(screen.y) * 0.3f},
@@ -652,6 +667,10 @@ namespace FluxEditor {
                     Platform::ShowError(window, "Nom", "Nom invalide : il ne doit pas être vide ni contenir \\ / : * ? \" < > |");
                 } else if (m_request == NameRequest::NewBiome || m_request == NameRequest::NewSpecies) {
                     if (CreateVegetationFile(engine)) {
+                        m_request = NameRequest::None;
+                    }
+                } else if (m_request == NameRequest::NewMaterial) {
+                    if (CreateMaterialFile(engine)) {
                         m_request = NameRequest::None;
                     }
                 } else if (m_request == NameRequest::NewInterface) {
@@ -695,6 +714,27 @@ namespace FluxEditor {
             }
         }
         ui.EndPanel();
+    }
+
+    bool ContentBrowser::CreateMaterialFile(Engine& engine) {
+        std::string name = m_requestName;
+        if (!name.ends_with(".fluxmat")) {
+            name += ".fluxmat";
+        }
+        const std::filesystem::path file = m_requestPath / Platform::PathFromUtf8(name);
+        std::error_code error;
+        if (std::filesystem::exists(file, error)) {
+            Platform::ShowError(engine.GetWindow(), "Nouveau matériau", "« " + name + " » existe déjà.");
+            return false;
+        }
+        if (auto written = SceneSerializer::WriteFile(file, MaterialPanel::NewMaterialText()); !written) {
+            Platform::ShowError(engine.GetWindow(), "Nouveau matériau", written.error());
+            return false;
+        }
+        m_sinceScan = ScanInterval;
+        m_selected = file;
+        m_materials->Open(engine, file);
+        return true;
     }
 
     bool ContentBrowser::CreateVegetationFile(Engine& engine) {
@@ -863,6 +903,9 @@ namespace FluxEditor {
         if (m_vegetation) {
             m_vegetation->FileMoved(from, to, oldReference, newReference);
         }
+        if (m_materials) {
+            m_materials->FileMoved(engine, from, to);
+        }
         ReplaceReferences(engine.GetScene(), components, oldReference, newReference);
         if (const std::optional<std::filesystem::path> openScene = moved(document.GetPath())) {
             document.FileRenamed(document.GetPath(), *openScene);
@@ -944,6 +987,9 @@ namespace FluxEditor {
         }
         if (m_vegetation) {
             m_vegetation->FileDeleted(path);
+        }
+        if (m_materials) {
+            m_materials->FileDeleted(engine, path);
         }
         m_sinceScan = ScanInterval; // relu à la prochaine frame
     }

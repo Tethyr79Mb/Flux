@@ -1056,6 +1056,20 @@ namespace Flux {
         return bounds;
     }
 
+    std::vector<std::string> Engine::GetMaterialNames(Entity entity) {
+        const auto* model = GetScene().TryGet<ModelComponent>(entity);
+        if (!GetProject() || !model || model->model.empty()) {
+            return {};
+        }
+        return m_renderer->GetMaterialNames(GetProject()->assetsDirectory / Platform::PathFromUtf8(model->model));
+    }
+
+    void Engine::PreviewMaterial(const std::filesystem::path& file, std::string text) {
+        if (m_renderer) {
+            m_renderer->PreviewMaterial(file, std::move(text));
+        }
+    }
+
     std::vector<std::string> Engine::GetAnimationNames(Entity entity) {
         const auto* model = GetScene().TryGet<ModelComponent>(entity);
         if (!GetProject() || !model || model->model.empty()) {

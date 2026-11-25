@@ -1538,6 +1538,17 @@ namespace Flux {
         return std::nullopt;
     }
 
+    std::vector<std::string> Renderer::GetMaterialNames(const std::filesystem::path& path) {
+        if (const GpuModel* model = m_impl->meshes->GetModels().Find(path)) {
+            return model->materialNames;
+        }
+        return {};
+    }
+
+    void Renderer::PreviewMaterial(const std::filesystem::path& file, std::string text) {
+        m_impl->meshes->GetModels().PreviewMaterial(file, std::move(text));
+    }
+
     std::vector<std::string> Renderer::GetAnimationNames(const std::filesystem::path& path) {
         std::vector<std::string> names;
         if (const GpuModel* model = m_impl->meshes->GetModels().Find(path)) {

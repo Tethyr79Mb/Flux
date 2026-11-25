@@ -50,6 +50,7 @@ namespace Flux {
         Biome, // .biome.json (végétation des planètes)
         Species, // .espece.json (espèce d'arbre d'un biome)
         AnimationGraph, // .fluxanim
+        Material, // .fluxmat (matériau multicouche)
     };
 
     // Réglages d'édition d'un champ numérique (inspecteur).

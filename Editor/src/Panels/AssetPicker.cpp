@@ -52,6 +52,9 @@ namespace FluxEditor {
             if (type == AssetType::AnimationGraph) {
                 return {{"Graphes d'animation Flux", ".fluxanim"}, "Choisir un graphe d'animation", "Animations"};
             }
+            if (type == AssetType::Material) {
+                return {{"Matériaux Flux", ".fluxmat"}, "Choisir un matériau", "Materiaux"};
+            }
             return {{"Images", ".png;.jpg;.jpeg;.tga;.bmp"}, "Choisir une image", "textures"};
         }
 
